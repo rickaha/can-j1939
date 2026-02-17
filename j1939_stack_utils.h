@@ -1,3 +1,8 @@
+/*
+ * SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2026 Rickard Häll
+ */
 #ifndef J1939_STACK_UTILS_H
 #define J1939_STACK_UTILS_H
 

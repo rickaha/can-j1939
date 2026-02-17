@@ -1,3 +1,8 @@
+/*
+ * SPDX-License-Identifier: MIT
+ *
+ * Copyright (c) 2026 Rickard Häll
+ */
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
