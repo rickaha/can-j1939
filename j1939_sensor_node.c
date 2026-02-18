@@ -13,13 +13,24 @@
 #define TRANSMIT_RATE_MS 100
 #define CAN_INTERFACE "vcan0"
 
+
+static const j1939_name_t ECU_NAME = {
+    .identity_number = 0x003039, // Decimal 12345
+    .mfg_code        = 0x3FF,    // Reserved/Non-specific
+    .function_inst   = 0x00,     // First instance
+    .function        = 0x19,     // 25 = Peripheral Device
+    .reserved        = 0x0,      // Must be 0
+    .vehicle_system  = 0x00,     // Non-specific
+    .system_inst     = 0x00,     // First instance
+    .industry_group  = 0x05,     // 5 = Industrial/Process Control
+    .arbitrary_addr  = 0x01      // Enable Dynamic Address Claiming
+};
+
 int main() {
-    // Start with a simple 64-bit value.
-    uint64_t my_name = 0x123456789ABCDEF0ULL;
 
     printf("Starting J1939 Sensor Hub...\n");
 
-    int sock = j1939_socket_open(CAN_INTERFACE, my_name, PREFERRED_ADDRESS);
+    int sock = j1939_socket_open(CAN_INTERFACE, ECU_NAME.value, PREFERRED_ADDRESS);
 
     if (sock < 0) {
       fprintf(stderr, "Failed to initialize J1939 on %s. Is the interface up?\n", CAN_INTERFACE);
