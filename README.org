@@ -1,8 +1,6 @@
 #+TITLE: CAN-J1939
 #+AUTHOR: Rickard Häll
 
-* CAN-J1939
-
 ** Prerequisites
 Ensure your CAN interface is up and the J1939 stack is loaded.
 
