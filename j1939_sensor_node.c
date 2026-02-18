@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <stdint.h>
 #include "j1939_stack_utils.h"
+#include "j1939_pgn_data.h"
 
 #define PREFERRED_ADDRESS 0x80
 #define TRANSMIT_RATE_MS 100
@@ -24,6 +25,13 @@ static const j1939_name_t ECU_NAME = {
     .system_inst     = 0x00,     // First instance
     .industry_group  = 0x05,     // 5 = Industrial/Process Control
     .arbitrary_addr  = 0x01      // Enable Dynamic Address Claiming
+};
+
+static const j1939_component_id_t COMPONENT_ID = {
+    .make   = "RPi*",
+    .model  = "Sensor-Hub*",
+    .serial = "SN-00001*",
+    .unit   = "U-01*"
 };
 
 int main() {
