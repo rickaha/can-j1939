@@ -49,3 +49,30 @@ int j1939_socket_open(const char *ifname, uint64_t name, uint8_t addr) {
 
     return sock;
 }
+
+int j1939_send(int sock, uint32_t pgn, uint8_t dest_addr,
+               const void *payload, size_t len) {
+    struct sockaddr_can dest = {0};
+    dest.can_family          = AF_CAN;
+    dest.can_addr.j1939.name = J1939_NO_NAME;
+    dest.can_addr.j1939.pgn  = pgn;
+
+    /*
+     * If the upper byte of the PGN (bits 17-16) is 0, it is PDU1
+     * and we use the supplied dest_addr. Otherwise force global broadcast (0xFF).
+     */
+    if ((pgn & 0x030000U) == 0) {
+        dest.can_addr.j1939.addr = dest_addr;
+    } else {
+        dest.can_addr.j1939.addr = J1939_NO_ADDR;
+    }
+
+    ssize_t sent = sendto(sock, payload, len, 0,
+                          (struct sockaddr *)&dest, sizeof(dest));
+    if (sent < 0) {
+        perror("j1939_send: sendto");
+        return -1;
+    }
+
+    return 0;
+}

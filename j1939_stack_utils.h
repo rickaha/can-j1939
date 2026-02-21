@@ -8,6 +8,7 @@
 
 #include <stdint.h>
 #include <linux/can/j1939.h>
+#include <stddef.h>
 
 /**
  * J1939 NAME Structure
@@ -24,11 +25,33 @@ typedef union {
         uint8_t  system_inst     : 4;
         uint8_t  industry_group  : 3;
         uint8_t  arbitrary_addr  : 1;
-    } __attribute__((packed)); // <-- important
+    } __attribute__((packed));
     uint64_t value;
 } j1939_name_t;
 
-
+/**
+ * Open a J1939 socket and initiate address claiming.
+ * Returns the socket fd on success, -1 on failure.
+ */
 int j1939_socket_open(const char *ifname, uint64_t name, uint8_t addr);
 
-#endif
+/**
+ * Generic J1939 send.
+ *
+ * Constructs the sockaddr_can destination from @pgn and @dest_addr, then
+ * calls sendto(). The PGN format (PDU1 vs PDU2) is determined automatically:
+ *   - PDU1 PGNs (bits 17-16 == 0) are sent unicast to @dest_addr.
+ *   - PDU2 PGNs are always broadcast; @dest_addr is ignored.
+ *
+ * @sock       Bound J1939 socket fd.
+ * @pgn        PGN number (24-bit).
+ * @dest_addr  Destination SA for PDU1 PGNs; ignored for PDU2.
+ * @payload    Pre-built payload buffer.
+ * @len        Length of @payload in bytes.
+ *
+ * Returns 0 on success, -1 on failure (errno set by sendto).
+ */
+int j1939_send(int sock, uint32_t pgn, uint8_t dest_addr,
+               const void *payload, size_t len);
+
+#endif /* J1939_STACK_UTILS_H */
