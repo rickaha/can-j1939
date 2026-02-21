@@ -28,10 +28,10 @@ static const j1939_name_t ECU_NAME = {
 };
 
 static const j1939_component_id_t COMPONENT_ID = {
-    .make   = "RPi*",
-    .model  = "Sensor-Hub*",
-    .serial = "SN-00001*",
-    .unit   = "U-01*"
+    .make   = "RPi",
+    .model  = "Sensor-Hub",
+    .serial = "SN-00001",
+    .unit   = "U-01"
 };
 
 int main() {
