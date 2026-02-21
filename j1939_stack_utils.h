@@ -10,9 +10,11 @@
 #include <linux/can/j1939.h>
 #include <stddef.h>
 
+/* STRUCTS */
+
 /**
- * J1939 NAME Structure
- * This 64-bit value is used for Address Claiming.
+ * J1939 NAME — 64-bit ECU identifier used for Address Claiming.
+ * Bit fields are ordered per SAE J1939/21.
  */
 typedef union {
     struct {
@@ -29,11 +31,21 @@ typedef union {
     uint64_t value;
 } j1939_name_t;
 
+/* SOCKET */
+
 /**
- * Open a J1939 socket and initiate address claiming.
+ * Open a J1939 socket and bind to @ifname with the given NAME and address.
+ * Initiates address claiming via the kernel J1939 stack.
+ *
+ * @ifname   CAN interface name (e.g. "vcan0").
+ * @name     64-bit J1939 NAME for address claiming.
+ * @addr     Preferred source address.
+ *
  * Returns the socket fd on success, -1 on failure.
  */
 int j1939_socket_open(const char *ifname, uint64_t name, uint8_t addr);
+
+/* SEND */
 
 /**
  * Generic J1939 send.

@@ -11,6 +11,8 @@
 #include <net/if.h>
 #include "j1939_stack_utils.h"
 
+/* SOCKET */
+
 int j1939_socket_open(const char *ifname, uint64_t name, uint8_t addr) {
     int sock;
     struct sockaddr_can addr_can;
@@ -49,6 +51,8 @@ int j1939_socket_open(const char *ifname, uint64_t name, uint8_t addr) {
 
     return sock;
 }
+
+/* SEND */
 
 int j1939_send(int sock, uint32_t pgn, uint8_t dest_addr,
                const void *payload, size_t len) {
