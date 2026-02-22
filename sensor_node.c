@@ -3,35 +3,34 @@
  *
  * Copyright (c) 2026 Rickard Häll
  */
+#include "pgn_data.h"
+#include "stack_utils.h"
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <stdint.h>
-#include "j1939_stack_utils.h"
-#include "j1939_pgn_data.h"
 
 #define PREFERRED_ADDRESS 0x80
 #define TRANSMIT_RATE_MS 100
 #define CAN_INTERFACE "vcan0"
 
-
 static const j1939_name_t ECU_NAME = {
     .identity_number = 0x003039, // Decimal 12345
-    .mfg_code        = 0x3FF,    // Reserved/Non-specific
-    .function_inst   = 0x00,     // First instance
-    .function        = 0x19,     // 25 = Peripheral Device
-    .reserved        = 0x0,      // Must be 0
-    .vehicle_system  = 0x00,     // Non-specific
-    .system_inst     = 0x00,     // First instance
-    .industry_group  = 0x05,     // 5 = Industrial/Process Control
-    .arbitrary_addr  = 0x01      // Enable Dynamic Address Claiming
+    .mfg_code = 0x3FF,           // Reserved/Non-specific
+    .function_inst = 0x00,       // First instance
+    .function = 0x19,            // 25 = Peripheral Device
+    .reserved = 0x0,             // Must be 0
+    .vehicle_system = 0x00,      // Non-specific
+    .system_inst = 0x00,         // First instance
+    .industry_group = 0x05,      // 5 = Industrial/Process Control
+    .arbitrary_addr = 0x01       // Enable Dynamic Address Claiming
 };
 
 static const j1939_component_id_t COMPONENT_ID = {
-    .make   = "RPi",
-    .model  = "Sensor-Hub",
+    .make = "RPi",
+    .model = "Sensor-Hub",
     .serial = "SN-00001",
-    .unit   = "U-01"
+    .unit = "U-01",
 };
 
 int main() {
@@ -41,7 +40,7 @@ int main() {
     int sock = j1939_socket_open(CAN_INTERFACE, ECU_NAME.value, PREFERRED_ADDRESS);
 
     if (sock < 0) {
-      fprintf(stderr, "Failed to initialize J1939 on %s. Is the interface up?\n", CAN_INTERFACE);
+        fprintf(stderr, "Failed to initialize J1939 on %s. Is the interface up?\n", CAN_INTERFACE);
         return EXIT_FAILURE;
     }
 

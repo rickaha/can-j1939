@@ -3,17 +3,17 @@
  *
  * Copyright (c) 2026 Rickard Häll
  */
+#include "stack_utils.h"
+#include <net/if.h>
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
-#include <sys/socket.h>
 #include <sys/ioctl.h>
-#include <net/if.h>
-#include "j1939_stack_utils.h"
+#include <sys/socket.h>
+#include <unistd.h>
 
 /* SOCKET */
 
-int j1939_socket_open(const char *ifname, uint64_t name, uint8_t addr) {
+int j1939_socket_open(const char* ifname, uint64_t name, uint8_t addr) {
     int sock;
     struct sockaddr_can addr_can;
     struct ifreq ifr;
@@ -40,10 +40,10 @@ int j1939_socket_open(const char *ifname, uint64_t name, uint8_t addr) {
     addr_can.can_ifindex = ifr.ifr_ifindex;
     addr_can.can_addr.j1939.name = name;
     addr_can.can_addr.j1939.addr = addr;
-    addr_can.can_addr.j1939.pgn  = J1939_NO_PGN;
+    addr_can.can_addr.j1939.pgn = J1939_NO_PGN;
 
     // Tell the kernel to start Address Claiming
-    if (bind(sock, (struct sockaddr *)&addr_can, sizeof(addr_can)) < 0) {
+    if (bind(sock, (struct sockaddr*)&addr_can, sizeof(addr_can)) < 0) {
         perror("Bind failed");
         close(sock);
         return -1;
@@ -54,12 +54,11 @@ int j1939_socket_open(const char *ifname, uint64_t name, uint8_t addr) {
 
 /* SEND */
 
-int j1939_send(int sock, uint32_t pgn, uint8_t dest_addr,
-               const void *payload, size_t len) {
+int j1939_send(int sock, uint32_t pgn, uint8_t dest_addr, const void* payload, size_t len) {
     struct sockaddr_can dest = {0};
-    dest.can_family          = AF_CAN;
+    dest.can_family = AF_CAN;
     dest.can_addr.j1939.name = J1939_NO_NAME;
-    dest.can_addr.j1939.pgn  = pgn;
+    dest.can_addr.j1939.pgn = pgn;
 
     /*
      * If the upper byte of the PGN (bits 17-16) is 0, it is PDU1
@@ -71,8 +70,7 @@ int j1939_send(int sock, uint32_t pgn, uint8_t dest_addr,
         dest.can_addr.j1939.addr = J1939_NO_ADDR;
     }
 
-    ssize_t sent = sendto(sock, payload, len, 0,
-                          (struct sockaddr *)&dest, sizeof(dest));
+    ssize_t sent = sendto(sock, payload, len, 0, (struct sockaddr*)&dest, sizeof(dest));
     if (sent < 0) {
         perror("j1939_send: sendto");
         return -1;

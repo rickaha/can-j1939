@@ -6,15 +6,15 @@
 #ifndef J1939_PGN_DATA_H
 #define J1939_PGN_DATA_H
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #define REQUEST_QUEUE_SIZE 8
 
 /* PGN NUMBERS */
 
-#define PGN_59904     0x00EA00U  /* Request PGN (PDU1)              */
-#define PGN_65259     0x00FEEBU  /* Component Identification (PDU2) */
+#define PGN_59904 0x00EA00U /* Request PGN (PDU1)              */
+#define PGN_65259 0x00FEEBU /* Component Identification (PDU2) */
 
 /* STRUCTS */
 
@@ -23,18 +23,18 @@
  * Application-level container.
  */
 typedef struct {
-  char make[32];
-  char model[32];
-  char serial[32];
-  char unit[32];
+    char make[32];
+    char model[32];
+    char serial[32];
+    char unit[32];
 } j1939_component_id_t;
 
 /**
  * A single on-request entry pushed onto the request queue.
  */
 typedef struct {
-  uint32_t pgn;
-  uint8_t  requester_addr;
+    uint32_t pgn;
+    uint8_t requester_addr;
 } pgn_request_t;
 
 /* BUILDERS */
@@ -52,9 +52,8 @@ typedef struct {
  *
  * Returns 0 on success, -1 if the payload would overflow @payload_buf_len.
  */
-int build_pgn_65259_payload(const j1939_component_id_t *component_id,
-                            uint8_t *payload_buf, size_t payload_buf_len,
-                            size_t *payload_len);
+int build_pgn_65259_payload(const j1939_component_id_t* component_id, uint8_t* payload_buf,
+                            size_t payload_buf_len, size_t* payload_len);
 
 /* REQUESTS */
 
@@ -69,7 +68,7 @@ int build_pgn_65259_payload(const j1939_component_id_t *component_id,
  *
  * Returns 0 on success, -1 if the PGN is unsupported or the queue is full.
  */
-int handle_request(uint32_t requested_pgn, uint8_t requester_addr,
-                   pgn_request_t *queue, uint8_t *queue_count);
+int handle_request(uint32_t requested_pgn, uint8_t requester_addr, pgn_request_t* queue,
+                   uint8_t* queue_count);
 
 #endif /* J1939_PGN_DATA_H */

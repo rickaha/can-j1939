@@ -6,9 +6,9 @@
 #ifndef J1939_STACK_UTILS_H
 #define J1939_STACK_UTILS_H
 
-#include <stdint.h>
 #include <linux/can/j1939.h>
 #include <stddef.h>
+#include <stdint.h>
 
 /* STRUCTS */
 
@@ -19,14 +19,14 @@
 typedef union {
     struct {
         uint32_t identity_number : 21;
-        uint16_t mfg_code        : 11;
-        uint8_t  function_inst   : 5;
-        uint8_t  function        : 8;
-        uint8_t  reserved        : 1;
-        uint8_t  vehicle_system  : 7;
-        uint8_t  system_inst     : 4;
-        uint8_t  industry_group  : 3;
-        uint8_t  arbitrary_addr  : 1;
+        uint16_t mfg_code : 11;
+        uint8_t function_inst : 5;
+        uint8_t function : 8;
+        uint8_t reserved : 1;
+        uint8_t vehicle_system : 7;
+        uint8_t system_inst : 4;
+        uint8_t industry_group : 3;
+        uint8_t arbitrary_addr : 1;
     } __attribute__((packed));
     uint64_t value;
 } j1939_name_t;
@@ -43,7 +43,7 @@ typedef union {
  *
  * Returns the socket fd on success, -1 on failure.
  */
-int j1939_socket_open(const char *ifname, uint64_t name, uint8_t addr);
+int j1939_socket_open(const char* ifname, uint64_t name, uint8_t addr);
 
 /* SEND */
 
@@ -63,7 +63,6 @@ int j1939_socket_open(const char *ifname, uint64_t name, uint8_t addr);
  *
  * Returns 0 on success, -1 on failure (errno set by sendto).
  */
-int j1939_send(int sock, uint32_t pgn, uint8_t dest_addr,
-               const void *payload, size_t len);
+int j1939_send(int sock, uint32_t pgn, uint8_t dest_addr, const void* payload, size_t len);
 
 #endif /* J1939_STACK_UTILS_H */
