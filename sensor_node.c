@@ -5,6 +5,7 @@
  */
 #include "pgn_data.h"
 #include "stack_utils.h"
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,6 +35,27 @@ static const j1939_component_id_t COMPONENT_ID = {
     .serial = "SN-00001",
     .unit = "U-01",
 };
+
+/* STRUCTS */
+
+typedef struct {
+    int sock;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    pgn_request_t request_queue[REQUEST_QUEUE_SIZE];
+    uint8_t request_queue_count;
+} rxtx_ctx_t;
+
+typedef struct {
+    pthread_mutex_t mutex;
+    /* Sensor values go here as they are implemented*/
+} sensor_values_t;
+
+typedef struct {
+    volatile sig_atomic_t running;
+    rxtx_ctx_t rxtx;
+    sensor_values_t sensors;
+} node_ctx_t;
 
 /* THREADS */
 
