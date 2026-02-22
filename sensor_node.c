@@ -14,6 +14,8 @@
 #define TRANSMIT_RATE_MS 100
 #define CAN_INTERFACE "vcan0"
 
+/* NODE IDENTITY */
+
 static const j1939_name_t ECU_NAME = {
     .identity_number = 0x003039, // Decimal 12345
     .mfg_code = 0x3FF,           // Reserved/Non-specific
@@ -32,6 +34,44 @@ static const j1939_component_id_t COMPONENT_ID = {
     .serial = "SN-00001",
     .unit = "U-01",
 };
+
+/* THREADS */
+
+static void* rx_thread(void* arg) {
+    node_ctx_t* ctx = (node_ctx_t*)arg;
+
+    /* TODO: implement RX thread
+     * - block on recvfrom()
+     * - parse incoming PGN 59904 requests
+     * - call handle_request() under mutex
+     * - signal cond to wake TX thread */
+
+    (void)ctx;
+    return NULL;
+}
+
+static void* tx_thread(void* arg) {
+    node_ctx_t* ctx = (node_ctx_t*)arg;
+
+    /* TODO: implement TX thread
+     * - wake on cond signal or transmit period timeout
+     * - drain request queue and send on-request PGNs
+     * - build and send periodic sensor PGNs */
+
+    (void)ctx;
+    return NULL;
+}
+
+static void* sensor_thread(void* arg) {
+    node_ctx_t* ctx = (node_ctx_t*)arg;
+
+    /* TODO: implement sensor thread
+     * - poll sensors at their respective rates
+     * - update sensor_data under mutex */
+
+    (void)ctx;
+    return NULL;
+}
 
 int main() {
 
