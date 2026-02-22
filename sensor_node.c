@@ -5,6 +5,7 @@
  */
 #include "pgn_data.h"
 #include "stack_utils.h"
+#include <pthread.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -96,25 +97,53 @@ static void* sensor_thread(void* arg) {
 }
 
 int main() {
-
     printf("Starting J1939 Sensor Hub...\n");
 
-    int sock = j1939_socket_open(CAN_INTERFACE, ECU_NAME.value, PREFERRED_ADDRESS);
+    node_ctx_t ctx = {0};
+    ctx.running = 1;
 
-    if (sock < 0) {
+    // Open J1939 socket
+    ctx.rxtx.sock = j1939_socket_open(CAN_INTERFACE, ECU_NAME.value, PREFERRED_ADDRESS);
+    if (ctx.rxtx.sock < 0) {
         fprintf(stderr, "Failed to initialize J1939 on %s. Is the interface up?\n", CAN_INTERFACE);
+        return EXIT_FAILURE;
+    }
+
+    // Initialize synchronization primitives
+    if (pthread_mutex_init(&ctx.rxtx.mutex, NULL) != 0 ||
+        pthread_cond_init(&ctx.rxtx.cond, NULL) != 0 ||
+        pthread_mutex_init(&ctx.sensors.mutex, NULL) != 0) {
+        perror("pthread mutex/cond init failed");
+        close(ctx.rxtx.sock);
         return EXIT_FAILURE;
     }
 
     printf("Successfully claimed address 0x%02X. Entering main loop...\n", PREFERRED_ADDRESS);
 
-    while (1) {
-        // Sensor logic goes here
-        printf("Broadcasting PGNs to the bus...\n");
-
-        usleep(TRANSMIT_RATE_MS * 1000);
+    // Create threads - pass pointer to ctx
+    pthread_t rx_tid, tx_tid, sensor_tid;
+    if (pthread_create(&rx_tid, NULL, rx_thread, &ctx) != 0 ||
+        pthread_create(&tx_tid, NULL, tx_thread, &ctx) != 0 ||
+        pthread_create(&sensor_tid, NULL, sensor_thread, &ctx) != 0) {
+        perror("pthread_create failed");
+        close(ctx.rxtx.sock);
+        pthread_mutex_destroy(&ctx.rxtx.mutex);
+        pthread_cond_destroy(&ctx.rxtx.cond);
+        pthread_mutex_destroy(&ctx.sensors.mutex);
+        return EXIT_FAILURE;
     }
 
-    close(sock);
+    // Wait for all threads to finish (exit when they see running == 0)
+    pthread_join(rx_tid, NULL);
+    pthread_join(tx_tid, NULL);
+    pthread_join(sensor_tid, NULL);
+
+    // Cleanup
+    pthread_mutex_destroy(&ctx.rxtx.mutex);
+    pthread_cond_destroy(&ctx.rxtx.cond);
+    pthread_mutex_destroy(&ctx.sensors.mutex);
+    close(ctx.rxtx.sock);
+
+    printf("Sensor Hub shut down cleanly.\n");
     return 0;
 }
