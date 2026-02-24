@@ -9,7 +9,7 @@
 
 /* BUILDERS */
 
-int build_pgn_65259_payload(const j1939_component_id_t* component_id, uint8_t* payload_buf,
+int build_pgn_65259_payload(const component_id_t* component_id, uint8_t* payload_buf,
                             size_t payload_buf_len, size_t* payload_len) {
     memset(payload_buf, 0, payload_buf_len);
 

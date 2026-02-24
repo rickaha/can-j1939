@@ -19,7 +19,7 @@
 
 /* NODE IDENTITY */
 
-static const j1939_name_t ECU_NAME = {
+static const device_name_t ECU_NAME = {
     .identity_number = 0x003039, // Decimal 12345
     .mfg_code = 0x3FF,           // Reserved/Non-specific
     .function_inst = 0x00,       // First instance
@@ -31,7 +31,7 @@ static const j1939_name_t ECU_NAME = {
     .arbitrary_addr = 0x01       // Enable Dynamic Address Claiming
 };
 
-static const j1939_component_id_t COMPONENT_ID = {
+static const component_id_t COMPONENT_ID = {
     .make = "RPi",
     .model = "Sensor-Hub",
     .serial = "SN-00001",
@@ -130,7 +130,7 @@ int main() {
     ctx.running = 1;
 
     // Open J1939 socket
-    ctx.rxtx.sock = j1939_socket_open(CAN_INTERFACE, ECU_NAME.value, PREFERRED_ADDRESS);
+    ctx.rxtx.sock = can_open_socket(CAN_INTERFACE, ECU_NAME.value, PREFERRED_ADDRESS);
     if (ctx.rxtx.sock < 0) {
         fprintf(stderr, "Failed to initialize J1939 on %s. Is the interface up?\n", CAN_INTERFACE);
         return EXIT_FAILURE;

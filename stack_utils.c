@@ -13,7 +13,7 @@
 
 /* SOCKET */
 
-int j1939_socket_open(const char* ifname, uint64_t name, uint8_t addr) {
+int can_open_socket(const char* ifname, uint64_t name, uint8_t addr) {
     int sock;
     struct sockaddr_can addr_can;
     struct ifreq ifr;
@@ -54,7 +54,7 @@ int j1939_socket_open(const char* ifname, uint64_t name, uint8_t addr) {
 
 /* SEND */
 
-int j1939_send(int sock, uint32_t pgn, uint8_t dest_addr, const void* payload, size_t len) {
+int can_send(int sock, uint32_t pgn, uint8_t dest_addr, const void* payload, size_t len) {
     struct sockaddr_can dest = {0};
     dest.can_family = AF_CAN;
     dest.can_addr.j1939.name = J1939_NO_NAME;
@@ -72,7 +72,7 @@ int j1939_send(int sock, uint32_t pgn, uint8_t dest_addr, const void* payload, s
 
     ssize_t sent = sendto(sock, payload, len, 0, (struct sockaddr*)&dest, sizeof(dest));
     if (sent < 0) {
-        perror("j1939_send: sendto");
+        perror("can_send: sendto");
         return -1;
     }
 

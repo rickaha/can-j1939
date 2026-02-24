@@ -3,8 +3,8 @@
  *
  * Copyright (c) 2026 Rickard Häll
  */
-#ifndef J1939_STACK_UTILS_H
-#define J1939_STACK_UTILS_H
+#ifndef STACK_UTILS_H
+#define STACK_UTILS_H
 
 #include <linux/can/j1939.h>
 #include <stddef.h>
@@ -29,7 +29,7 @@ typedef union {
         uint8_t arbitrary_addr : 1;
     } __attribute__((packed));
     uint64_t value;
-} j1939_name_t;
+} device_name_t;
 
 /* SOCKET */
 
@@ -43,7 +43,7 @@ typedef union {
  *
  * Returns the socket fd on success, -1 on failure.
  */
-int j1939_socket_open(const char* ifname, uint64_t name, uint8_t addr);
+int can_open_socket(const char* ifname, uint64_t name, uint8_t addr);
 
 /* SEND */
 
@@ -63,6 +63,6 @@ int j1939_socket_open(const char* ifname, uint64_t name, uint8_t addr);
  *
  * Returns 0 on success, -1 on failure (errno set by sendto).
  */
-int j1939_send(int sock, uint32_t pgn, uint8_t dest_addr, const void* payload, size_t len);
+int can_send(int sock, uint32_t pgn, uint8_t dest_addr, const void* payload, size_t len);
 
-#endif /* J1939_STACK_UTILS_H */
+#endif /* STACK_UTILS_H */
