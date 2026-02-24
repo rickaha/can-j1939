@@ -71,4 +71,19 @@ int build_pgn_65259_payload(const component_id_t* component_id, uint8_t* payload
 int handle_request(uint32_t requested_pgn, uint8_t requester_addr, pgn_request_t* queue,
                    uint8_t* queue_count);
 
+/* PARSERS */
+
+/**
+ * Parse PGN 59904 (Request PGN) payload.
+ *
+ * The payload is always 3 bytes encoding the requested PGN little-endian.
+ *
+ * @buf            Received payload buffer.
+ * @buf_len        Length of @buf in bytes.
+ * @requested_pgn  Written with the parsed PGN number on success.
+ *
+ * Returns 0 on success, -1 if buf_len is less than 3.
+ */
+int parse_pgn_59904_payload(const uint8_t* buf, size_t buf_len, uint32_t* requested_pgn);
+
 #endif /* PGN_DATA_H */

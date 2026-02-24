@@ -58,3 +58,21 @@ int handle_request(uint32_t requested_pgn, uint8_t requester_addr, pgn_request_t
 
     return 0;
 }
+
+/* PARSERS */
+
+int parse_pgn_59904_payload(const uint8_t *buf, size_t buf_len,
+                            uint32_t *requested_pgn) {
+    if (buf_len < 3) {
+        fprintf(stderr, "parse_pgn_59904_payload: payload too short (%zu bytes)\n",
+                buf_len);
+        return -1;
+    }
+
+    /* PGN is encoded little-endian in 3 bytes. */
+    *requested_pgn = (uint32_t)buf[0]
+                   | ((uint32_t)buf[1] << 8)
+                   | ((uint32_t)buf[2] << 16);
+
+    return 0;
+}
