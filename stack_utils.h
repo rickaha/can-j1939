@@ -10,6 +10,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* Constants */
+
+#define CAN_MAX_PAYLOAD 1785
+
 /* STRUCTS */
 
 /**

@@ -14,7 +14,6 @@
 #include <unistd.h>
 
 #define PREFERRED_ADDRESS 0x80
-#define TRANSMIT_RATE_MS 100
 #define CAN_INTERFACE "vcan0"
 
 /* NODE IDENTITY */
@@ -88,13 +87,36 @@ static void sensors_poll() {
 static void* rx_thread(void* arg) {
     node_ctx_t* ctx = (node_ctx_t*)arg;
 
-    /* TODO: implement RX thread
-     * - block on recvfrom()
-     * - parse incoming PGN 59904 requests
-     * - call handle_request() under mutex
-     * - signal cond to wake TX thread */
+    printf("[rx] Thread started. tid=%lu\n", pthread_self());
 
-    (void)ctx;
+    while (ctx->running) {
+        uint8_t buf[CAN_MAX_PAYLOAD];
+        size_t len;
+        uint32_t pgn;
+        uint8_t src_addr;
+
+        //  if returns -1 we break out of the loop, which exits the thread. That handles socket
+        //  closure cleanly.
+        if (can_receive(ctx->rxtx.sock, &pgn, &src_addr, buf, sizeof(buf), &len) < 0)
+            break;
+
+        // anything that isn't a request PGN gets silently dropped
+        if (pgn != PGN_59904)
+            continue;
+
+        // a malformed payload doesn't kill the thread, it just gets discarded.
+        uint32_t requested_pgn;
+        if (parse_pgn_59904_payload(buf, len, &requested_pgn) < 0)
+            continue;
+
+        pthread_mutex_lock(&ctx->rxtx.mutex);
+        handle_request(requested_pgn, src_addr, ctx->rxtx.request_queue,
+                       &ctx->rxtx.request_queue_count);
+        pthread_cond_signal(&ctx->rxtx.cond);
+        pthread_mutex_unlock(&ctx->rxtx.mutex);
+    }
+
+    printf("[rx] Thread exiting.\n");
     return NULL;
 }
 
