@@ -78,3 +78,23 @@ int can_send(int sock, uint32_t pgn, uint8_t dest_addr, const void* payload, siz
 
     return 0;
 }
+
+/* RECEIVE */
+
+int can_receive(int sock, uint32_t* pgn, uint8_t* src_addr, uint8_t* buf, size_t buf_len,
+                size_t* recv_len) {
+    struct sockaddr_can src = {0};
+    socklen_t src_len = sizeof(src);
+
+    ssize_t n = recvfrom(sock, buf, buf_len, 0, (struct sockaddr*)&src, &src_len);
+    if (n < 0) {
+        perror("can_receive: recvfrom");
+        return -1;
+    }
+
+    *pgn = src.can_addr.j1939.pgn;
+    *src_addr = src.can_addr.j1939.addr;
+    *recv_len = (size_t)n;
+
+    return 0;
+}

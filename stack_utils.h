@@ -65,4 +65,23 @@ int can_open_socket(const char* ifname, uint64_t name, uint8_t addr);
  */
 int can_send(int sock, uint32_t pgn, uint8_t dest_addr, const void* payload, size_t len);
 
+/**
+ * Generic J1939 receive.
+ *
+ * Wraps recvfrom(), hides sockaddr_can, and returns the three values
+ * the caller needs: the PGN, the source address, and the payload.
+ * Blocks until a frame arrives or the socket is closed.
+ *
+ * @sock       Bound J1939 socket fd.
+ * @pgn        Written with the PGN of the received frame.
+ * @src_addr   Written with the source address of the sender.
+ * @buf        Caller-supplied buffer to write the payload into.
+ * @buf_len    Size of @buf in bytes.
+ * @recv_len   Written with the number of bytes received.
+ *
+ * Returns 0 on success, -1 on failure (errno set by recvfrom).
+ */
+int can_receive(int sock, uint32_t *pgn, uint8_t *src_addr,
+                uint8_t *buf, size_t buf_len, size_t *recv_len);
+
 #endif /* STACK_UTILS_H */
