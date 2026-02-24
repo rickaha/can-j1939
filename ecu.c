@@ -4,6 +4,7 @@
  * Copyright (c) 2026 Rickard Häll
  */
 #include "pgn_data.h"
+#include "sensors.h"
 #include "stack_utils.h"
 #include <pthread.h>
 #include <signal.h>
@@ -50,7 +51,6 @@ typedef struct {
 typedef struct {
     pthread_mutex_t mutex;
     /* Sensor values go here as they are implemented*/
-    uint32_t dummy_counter; /* Placeholder — remove when real sensors are added */
 } sensor_values_t;
 
 typedef struct {
@@ -58,6 +58,30 @@ typedef struct {
     rxtx_ctx_t rxtx;
     sensor_values_t sensors;
 } node_ctx_t;
+
+/* Tasks */
+
+static sensor_task_t sensor_tasks[] = {
+    /* TODO: add sensor tasks here */
+    //  { .poll_rate_ms = 1000, .read = sensor_temperature_read, .value = &ctx.sensors.temperature},
+};
+
+static const size_t sensor_tasks_count = sizeof(sensor_tasks) / sizeof(sensor_tasks[0]);
+
+/* SENSORS POLL */
+
+static void sensors_poll() {
+    /* TODO: get monotonic timestamp (clock_gettime CLOCK_MONOTONIC).
+     * For each task in sensor_tasks:
+     *   - check if poll interval has elapsed since last_poll_ms
+     *   - call task.read(task.value) into a local variable — no lock held
+     *   - lock task.mutex
+     *   - write local variable to task.value
+     *   - unlock task.mutex
+     *   - update task.last_poll_ms */
+    (void)sensor_tasks;
+    (void)sensor_tasks_count;
+}
 
 /* THREADS */
 
@@ -82,40 +106,17 @@ static void* tx_thread(void* arg) {
      * - drain request queue and send on-request PGNs
      * - build and send periodic sensor PGNs */
 
-    printf("[tx] Thread started. tid=%lu\n", pthread_self());
-
-    while (ctx->running) {
-        /* Read and print sensor values to verify sensor thread is writing. */
-        pthread_mutex_lock(&ctx->sensors.mutex);
-        uint32_t counter = ctx->sensors.dummy_counter;
-        pthread_mutex_unlock(&ctx->sensors.mutex);
-
-        printf("[tx] Read dummy_counter = %u\n", counter);
-
-        usleep(TRANSMIT_RATE_MS * 1000);
-    }
-
-    printf("[tx] Thread exiting.\n");
+    (void)ctx;
     return NULL;
 }
 
 static void* sensor_thread(void* arg) {
     node_ctx_t* ctx = (node_ctx_t*)arg;
 
-    /* TODO: implement sensor thread
-     * - poll sensors at their respective rates
-     * - update sensor_data under mutex */
-
     printf("[sensor] Thread started. tid=%lu\n", pthread_self());
 
     while (ctx->running) {
-        /* Lock, update sensor values, unlock. */
-        pthread_mutex_lock(&ctx->sensors.mutex);
-        ctx->sensors.dummy_counter++;
-        printf("[sensor] dummy_counter = %u\n", ctx->sensors.dummy_counter);
-        pthread_mutex_unlock(&ctx->sensors.mutex);
-
-        usleep(TRANSMIT_RATE_MS * 1000);
+        sensors_poll();
     }
 
     printf("[sensor] Thread exiting.\n");
@@ -146,7 +147,9 @@ int main() {
 
     printf("Successfully claimed address 0x%02X. Entering main loop...\n", PREFERRED_ADDRESS);
 
-    // Create threads - pass pointer to ctx
+    /* Create threads in dependency order:
+     * sensor first — TX depends on sensor values being available.
+     * RX before TX  — RX must be listening before TX starts sending. */
     pthread_t rx_tid, tx_tid, sensor_tid;
     if (pthread_create(&sensor_tid, NULL, sensor_thread, &ctx) != 0 ||
         pthread_create(&rx_tid, NULL, rx_thread, &ctx) != 0 ||
