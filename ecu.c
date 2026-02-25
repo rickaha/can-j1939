@@ -30,13 +30,6 @@ static const device_name_t ECU_NAME = {
     .arbitrary_addr = 0x01       // Enable Dynamic Address Claiming
 };
 
-static const component_id_t COMPONENT_ID = {
-    .make = "RPi",
-    .model = "Sensor-Hub",
-    .serial = "SN-00001",
-    .unit = "U-01",
-};
-
 /* STRUCTS */
 
 typedef struct {
@@ -48,21 +41,18 @@ typedef struct {
 } rxtx_ctx_t;
 
 typedef struct {
-    pthread_mutex_t mutex;
-    /* Sensor values go here as they are implemented*/
-} sensor_values_t;
-
-typedef struct {
     volatile sig_atomic_t running;
     rxtx_ctx_t rxtx;
     sensor_values_t sensors;
+    pthread_mutex_t sensors_mutex;
 } node_ctx_t;
 
 /* Tasks */
 
 static sensor_task_t sensor_tasks[] = {
     /* TODO: add sensor tasks here */
-    //  { .poll_rate_ms = 1000, .read = sensor_temperature_read, .value = &ctx.sensors.temperature},
+    //  { .poll_rate_ms = 1000, .read = sensor_temperature_read, .value = &ctx.sensors.temperature,
+    //  .mutex = &ctx.sensors_mutex},
 };
 
 static const size_t sensor_tasks_count = sizeof(sensor_tasks) / sizeof(sensor_tasks[0]);
@@ -123,12 +113,41 @@ static void* rx_thread(void* arg) {
 static void* tx_thread(void* arg) {
     node_ctx_t* ctx = (node_ctx_t*)arg;
 
-    /* TODO: implement TX thread
-     * - wake on cond signal or transmit period timeout
-     * - drain request queue and send on-request PGNs
-     * - build and send periodic sensor PGNs */
+    printf("[tx] Thread started. tid=%lu\n", pthread_self());
 
-    (void)ctx;
+    while (ctx->running) {
+        // Wait for RX signal or periodic timeout
+        pthread_mutex_lock(&ctx->rxtx.mutex);
+        pthread_cond_wait(&ctx->rxtx.cond, &ctx->rxtx.mutex);
+
+        // Drain on-request queue
+        while (ctx->rxtx.request_queue_count > 0) {
+            ctx->rxtx.request_queue_count--;
+            pgn_request_t req = ctx->rxtx.request_queue[ctx->rxtx.request_queue_count];
+
+            // Unlock while building and sending
+            pthread_mutex_unlock(&ctx->rxtx.mutex);
+
+            uint8_t buf[CAN_MAX_PAYLOAD];
+            size_t len;
+            if (build_payload(req.pgn, &ctx->sensors, buf, sizeof(buf), &len) == 0)
+                can_send(ctx->rxtx.sock, req.pgn, req.requester_addr, buf, len);
+
+            pthread_mutex_lock(&ctx->rxtx.mutex);
+        }
+
+        pthread_mutex_unlock(&ctx->rxtx.mutex);
+
+        /* --- Periodic sensor PGNs ---------------------------------------- */
+        /* For each periodic PGN:
+         *   - lock sensors mutex
+         *   - read sensor value into local variable
+         *   - unlock sensors mutex
+         *   - build_payload(pgn, &ctx->sensors, buf, sizeof(buf), &len)
+         *   - can_send() */
+    }
+
+    printf("[tx] Thread exiting.\n");
     return NULL;
 }
 
@@ -151,6 +170,15 @@ int main() {
     node_ctx_t ctx = {0};
     ctx.running = 1;
 
+    /* Initialise pgn_data with device-specific identity. */
+    static const component_id_t COMPONENT_ID = {
+        .make = "RPi",
+        .model = "Sensor-Hub",
+        .serial = "SN-00001",
+        .unit = "U-01",
+    };
+    pgn_data_init(&COMPONENT_ID);
+
     // Open J1939 socket
     ctx.rxtx.sock = can_open_socket(CAN_INTERFACE, ECU_NAME.value, PREFERRED_ADDRESS);
     if (ctx.rxtx.sock < 0) {
@@ -161,7 +189,7 @@ int main() {
     // Initialize synchronization primitives
     if (pthread_mutex_init(&ctx.rxtx.mutex, NULL) != 0 ||
         pthread_cond_init(&ctx.rxtx.cond, NULL) != 0 ||
-        pthread_mutex_init(&ctx.sensors.mutex, NULL) != 0) {
+        pthread_mutex_init(&ctx.sensors_mutex, NULL) != 0) {
         perror("pthread mutex/cond init failed");
         close(ctx.rxtx.sock);
         return EXIT_FAILURE;
@@ -180,7 +208,7 @@ int main() {
         close(ctx.rxtx.sock);
         pthread_mutex_destroy(&ctx.rxtx.mutex);
         pthread_cond_destroy(&ctx.rxtx.cond);
-        pthread_mutex_destroy(&ctx.sensors.mutex);
+        pthread_mutex_destroy(&ctx.sensors_mutex);
         return EXIT_FAILURE;
     }
 
@@ -192,7 +220,7 @@ int main() {
     // Cleanup
     pthread_mutex_destroy(&ctx.rxtx.mutex);
     pthread_cond_destroy(&ctx.rxtx.cond);
-    pthread_mutex_destroy(&ctx.sensors.mutex);
+    pthread_mutex_destroy(&ctx.sensors_mutex);
     close(ctx.rxtx.sock);
 
     printf("Sensor Hub shut down cleanly.\n");

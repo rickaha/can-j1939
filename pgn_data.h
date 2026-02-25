@@ -8,6 +8,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "sensors.h"
 
 #define REQUEST_QUEUE_SIZE 8
 
@@ -37,7 +38,32 @@ typedef struct {
     uint8_t requester_addr;
 } pgn_request_t;
 
+/* INIT */
+
+/**
+ * Initialise pgn_data with device-specific identity.
+ * Call once from main() before starting threads.
+ *
+ * @component_id   Device-specific component identification.
+ */
+void pgn_data_init(const component_id_t* component_id);
+
 /* BUILDERS */
+
+/**
+ * Build a payload for any supported PGN.
+ * Selects the correct builder based on @pgn.
+ *
+ * @pgn          PGN number to build payload for.
+ * @values       Current sensor values (may be NULL for static PGNs).
+ * @buf          Caller-supplied buffer to write the payload into.
+ * @buf_len      Size of @buf in bytes.
+ * @len          Written with the number of bytes produced on success.
+ *
+ * Returns 0 on success, -1 if PGN is unsupported or payload overflows.
+ */
+int build_payload(uint32_t pgn, const sensor_values_t* values, uint8_t* buf, size_t buf_len,
+                  size_t* len);
 
 /**
  * Build the PGN 65259 payload.

@@ -7,6 +7,14 @@
 #include <stdio.h>
 #include <string.h>
 
+/* INIT */
+
+static component_id_t component_id = {0};
+
+void pgn_data_init(const component_id_t *id) {
+    component_id = *id;
+}
+
 /* BUILDERS */
 
 int build_pgn_65259_payload(const component_id_t* component_id, uint8_t* payload_buf,
@@ -28,6 +36,21 @@ int build_pgn_65259_payload(const component_id_t* component_id, uint8_t* payload
 
     *payload_len = (size_t)written;
     return 0;
+}
+
+/* DISPATCH */
+
+int build_payload(uint32_t pgn, const sensor_values_t *values,
+                  uint8_t *buf, size_t buf_len, size_t *len) {
+    (void)values; /* unused until sensor PGNs are implemented */
+
+    switch (pgn) {
+    case PGN_65259:
+        return build_pgn_65259_payload(&component_id, buf, buf_len, len);
+    default:
+        fprintf(stderr, "build_payload: unsupported PGN 0x%05X\n", pgn);
+        return -1;
+    }
 }
 
 /* REQUESTS */

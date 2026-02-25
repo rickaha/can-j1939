@@ -12,6 +12,16 @@
 /* STRUCTS */
 
 /**
+ * Device-specific sensor values.
+ * Add a field for each sensor wired up on this device.
+ * e.g. float temperature;
+ *      float humidity;
+ */
+typedef struct {
+    /* Sensor values go here as they are implemented */
+} sensor_values_t;
+
+/**
  * Describes a single sensor polling task.
  * Declare one entry per sensor in the task table in ecu.c.
  *
