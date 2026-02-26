@@ -90,13 +90,8 @@ static void* rx_thread(void* arg) {
         if (can_receive(ctx->rxtx.sock, &pgn, &src_addr, buf, sizeof(buf), &len) < 0)
             break;
 
-        // anything that isn't a request PGN gets silently dropped
-        if (pgn != PGN_59904)
-            continue;
-
-        // a malformed payload doesn't kill the thread, it just gets discarded.
         uint32_t requested_pgn;
-        if (parse_pgn_59904_payload(buf, len, &requested_pgn) < 0)
+        if (parse_payload(pgn, buf, len, &requested_pgn) < 0)
             continue;
 
         pthread_mutex_lock(&ctx->rxtx.mutex);

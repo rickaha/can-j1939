@@ -6,9 +6,9 @@
 #ifndef PGN_DATA_H
 #define PGN_DATA_H
 
+#include "sensors.h"
 #include <stddef.h>
 #include <stdint.h>
-#include "sensors.h"
 
 #define REQUEST_QUEUE_SIZE 8
 
@@ -98,6 +98,19 @@ int handle_request(uint32_t requested_pgn, uint8_t requester_addr, pgn_request_t
                    uint8_t* queue_count);
 
 /* PARSERS */
+
+/**
+ * Parse a payload for any supported received PGN.
+ * Selects the correct parser based on @pgn.
+ *
+ * @pgn            PGN number of the received frame.
+ * @buf            Received payload buffer.
+ * @buf_len        Length of @buf in bytes.
+ * @requested_pgn  Written with the parsed requested PGN on success.
+ *
+ * Returns 0 on success, -1 if PGN is unsupported or payload is malformed.
+ */
+int parse_payload(uint32_t pgn, const uint8_t* buf, size_t buf_len, uint32_t* requested_pgn);
 
 /**
  * Parse PGN 59904 (Request PGN) payload.

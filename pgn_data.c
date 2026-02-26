@@ -11,7 +11,7 @@
 
 static component_id_t component_id = {0};
 
-void pgn_data_init(const component_id_t *id) {
+void pgn_data_init(const component_id_t* id) {
     component_id = *id;
 }
 
@@ -40,8 +40,8 @@ int build_pgn_65259_payload(const component_id_t* component_id, uint8_t* payload
 
 /* DISPATCH */
 
-int build_payload(uint32_t pgn, const sensor_values_t *values,
-                  uint8_t *buf, size_t buf_len, size_t *len) {
+int build_payload(uint32_t pgn, const sensor_values_t* values, uint8_t* buf, size_t buf_len,
+                  size_t* len) {
     (void)values; /* unused until sensor PGNs are implemented */
 
     switch (pgn) {
@@ -84,18 +84,24 @@ int handle_request(uint32_t requested_pgn, uint8_t requester_addr, pgn_request_t
 
 /* PARSERS */
 
-int parse_pgn_59904_payload(const uint8_t *buf, size_t buf_len,
-                            uint32_t *requested_pgn) {
+int parse_payload(uint32_t pgn, const uint8_t* buf, size_t buf_len, uint32_t* requested_pgn) {
+    switch (pgn) {
+    case PGN_59904:
+        return parse_pgn_59904_payload(buf, buf_len, requested_pgn);
+    default:
+        fprintf(stderr, "parse_payload: unsupported PGN 0x%05X\n", pgn);
+        return -1;
+    }
+}
+
+int parse_pgn_59904_payload(const uint8_t* buf, size_t buf_len, uint32_t* requested_pgn) {
     if (buf_len < 3) {
-        fprintf(stderr, "parse_pgn_59904_payload: payload too short (%zu bytes)\n",
-                buf_len);
+        fprintf(stderr, "parse_pgn_59904_payload: payload too short (%zu bytes)\n", buf_len);
         return -1;
     }
 
     /* PGN is encoded little-endian in 3 bytes. */
-    *requested_pgn = (uint32_t)buf[0]
-                   | ((uint32_t)buf[1] << 8)
-                   | ((uint32_t)buf[2] << 16);
+    *requested_pgn = (uint32_t)buf[0] | ((uint32_t)buf[1] << 8) | ((uint32_t)buf[2] << 16);
 
     return 0;
 }
