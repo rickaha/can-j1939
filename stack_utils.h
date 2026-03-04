@@ -38,16 +38,43 @@ typedef union {
 /* SOCKET */
 
 /**
- * Open a J1939 socket and bind to @ifname with the given NAME and address.
- * Initiates address claiming via the kernel J1939 stack.
+ * Create a J1939 socket and resolve the interface index.
+ * Does not bind or claim an address — call can_address_claim() or
+ * can_address_claim_dynamic() after this.
  *
  * @ifname   CAN interface name (e.g. "vcan0").
- * @name     64-bit J1939 NAME for address claiming.
- * @addr     Preferred source address.
  *
  * Returns the socket fd on success, -1 on failure.
  */
-int can_open_socket(const char* ifname, uint64_t name, uint8_t addr);
+int can_socket_create(const char* ifname);
+
+/**
+ * Claim a static J1939 address.
+ * Binds the socket to @addr, sets socket options, sends the Address
+ * Claimed frame and waits 250ms. No looping — if the address is
+ * contested and lost the function returns -1.
+ *
+ * @sock   Bound J1939 socket fd from can_socket_create().
+ * @name   64-bit J1939 NAME.
+ * @addr   Static source address to claim (0x00–0xFD).
+ *
+ * Returns the claimed address on success, -1 on failure.
+ */
+int can_address_claim(int sock, uint64_t name, uint8_t addr);
+
+/**
+ * Claim a dynamic J1939 address in the range 128–247.
+ * Starts at @preferred_addr and loops upward until an address is
+ * successfully claimed or the range is exhausted.
+ * Sends Cannot Claim Address (0xFE) if no address is available.
+ *
+ * @sock           J1939 socket fd from can_socket_create().
+ * @name           64-bit J1939 NAME.
+ * @preferred_addr Preferred starting address (should be 128–247).
+ *
+ * Returns the claimed address on success, -1 if range exhausted.
+ */
+int can_address_claim_dynamic(int sock, uint64_t name, uint8_t preferred_addr);
 
 /* SEND */
 
@@ -85,7 +112,7 @@ int can_send(int sock, uint32_t pgn, uint8_t dest_addr, const void* payload, siz
  *
  * Returns 0 on success, -1 on failure (errno set by recvfrom).
  */
-int can_receive(int sock, uint32_t *pgn, uint8_t *src_addr,
-                uint8_t *buf, size_t buf_len, size_t *recv_len);
+int can_receive(int sock, uint32_t* pgn, uint8_t* src_addr, uint8_t* buf, size_t buf_len,
+                size_t* recv_len);
 
 #endif /* STACK_UTILS_H */

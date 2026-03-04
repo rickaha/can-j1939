@@ -174,10 +174,16 @@ int main() {
     };
     pgn_data_init(&COMPONENT_ID);
 
-    // Open J1939 socket
-    ctx.rxtx.sock = can_open_socket(CAN_INTERFACE, ECU_NAME.value, PREFERRED_ADDRESS);
+    // Create socket and claim address dynamically.
+    ctx.rxtx.sock = can_socket_create(CAN_INTERFACE);
     if (ctx.rxtx.sock < 0) {
-        fprintf(stderr, "Failed to initialize J1939 on %s. Is the interface up?\n", CAN_INTERFACE);
+        fprintf(stderr, "Failed to create J1939 socket on %s. Is the interface up?\n",
+                CAN_INTERFACE);
+        return EXIT_FAILURE;
+    }
+    if (can_address_claim_dynamic(ctx.rxtx.sock, ECU_NAME.value, PREFERRED_ADDRESS) < 0) {
+        fprintf(stderr, "Failed to claim a J1939 address on %s.\n", CAN_INTERFACE);
+        close(ctx.rxtx.sock);
         return EXIT_FAILURE;
     }
 
@@ -192,9 +198,9 @@ int main() {
 
     printf("Successfully claimed address 0x%02X. Entering main loop...\n", PREFERRED_ADDRESS);
 
-    /* Create threads in dependency order:
-     * sensor first — TX depends on sensor values being available.
-     * RX before TX  — RX must be listening before TX starts sending. */
+    // Create threads in dependency order:
+    // sensor first — TX depends on sensor values being available.
+    // RX before TX  — RX must be listening before TX starts sending.
     pthread_t rx_tid, tx_tid, sensor_tid;
     if (pthread_create(&sensor_tid, NULL, sensor_thread, &ctx) != 0 ||
         pthread_create(&rx_tid, NULL, rx_thread, &ctx) != 0 ||
