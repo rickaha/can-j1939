@@ -16,6 +16,7 @@
 
 #define PGN_59904 0x00EA00U /* Request PGN (PDU1)              */
 #define PGN_60928 0x00EE00U /* Address Claimed (PDU2)          */
+#define PGN_65240 0x00FED8U /* Commanded Address (PDU2)        */
 #define PGN_65259 0x00FEEBU /* Component Identification (PDU2) */
 
 /* STRUCTS */
@@ -147,5 +148,17 @@ int parse_pgn_59904_payload(const uint8_t* buf, size_t buf_len, parsed_request_t
  * Returns 0 on success, -1 if buf_len is less than 8.
  */
 int parse_pgn_60928_payload(const uint8_t* buf, size_t buf_len, parsed_request_t* request);
+
+/**
+ * Parse PGN 65240 (Commanded Address) payload.
+ * The payload is 9 bytes: 8 bytes NAME little-endian + 1 byte new address.
+ *
+ * @buf      Received payload buffer.
+ * @buf_len  Length of @buf in bytes.
+ * @request  request.name and request.new_addr written on success.
+ *
+ * Returns 0 on success, -1 if buf_len is less than 9.
+ */
+int parse_pgn_65240_payload(const uint8_t* buf, size_t buf_len, parsed_request_t* request);
 
 #endif /* PGN_DATA_H */

@@ -91,8 +91,10 @@ int parse_request(uint32_t pgn, const uint8_t* buf, size_t buf_len, parsed_reque
         return parse_pgn_59904_payload(buf, buf_len, request);
     case PGN_60928:
         return parse_pgn_60928_payload(buf, buf_len, request);
+    case PGN_65240:
+        return parse_pgn_65240_payload(buf, buf_len, request);
     default:
-        fprintf(stderr, "parse_payload: unsupported PGN 0x%05X\n", pgn);
+        fprintf(stderr, "parse_request: unsupported PGN 0x%05X\n", pgn);
         return -1;
     }
 }
@@ -111,7 +113,7 @@ int parse_pgn_59904_payload(const uint8_t* buf, size_t buf_len, parsed_request_t
 
 int parse_pgn_60928_payload(const uint8_t* buf, size_t buf_len, parsed_request_t* request) {
     if (buf_len < 8) {
-        fprintf(stderr, "parse_pgn_ee00_payload: payload too short (%zu bytes)\n", buf_len);
+        fprintf(stderr, "parse_pgn_60928_payload: payload too short (%zu bytes)\n", buf_len);
         return -1;
     }
 
@@ -119,6 +121,21 @@ int parse_pgn_60928_payload(const uint8_t* buf, size_t buf_len, parsed_request_t
     uint64_t name = 0;
     memcpy(&name, buf, sizeof(name));
     request->name = le64toh(name);
+
+    return 0;
+}
+
+int parse_pgn_65240_payload(const uint8_t* buf, size_t buf_len, parsed_request_t* request) {
+    if (buf_len < 9) {
+        fprintf(stderr, "parse_pgn_65240_payload: payload too short (%zu bytes)\n", buf_len);
+        return -1;
+    }
+
+    /* NAME is encoded little-endian in bytes 0-7, new address in byte 8. */
+    uint64_t name = 0;
+    memcpy(&name, buf, sizeof(name));
+    request->name = le64toh(name);
+    request->new_addr = buf[8];
 
     return 0;
 }

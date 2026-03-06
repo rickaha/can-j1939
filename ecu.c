@@ -114,6 +114,15 @@ static void* rx_thread(void* arg) {
             if (src_addr != J1939_IDLE_ADDR && request.name < ECU_NAME.value)
                 can_address_claim_dynamic(ctx->rxtx.sock, ECU_NAME.value, PREFERRED_ADDRESS);
             break;
+
+        case PGN_65240:
+            /*
+             * Commanded Address — another node is telling us to change address.
+             * Only act if the target NAME matches ours.
+             */
+            if (request.name == ECU_NAME.value)
+                can_address_claim(ctx->rxtx.sock, ECU_NAME.value, request.new_addr);
+            break;
         }
     }
 
