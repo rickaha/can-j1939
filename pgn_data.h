@@ -15,6 +15,7 @@
 /* PGN NUMBERS */
 
 #define PGN_59904 0x00EA00U /* Request PGN (PDU1)              */
+#define PGN_60928 0x00EE00U /* Address Claimed (PDU2)          */
 #define PGN_65259 0x00FEEBU /* Component Identification (PDU2) */
 
 /* STRUCTS */
@@ -134,5 +135,17 @@ int parse_request(uint32_t pgn, const uint8_t* buf, size_t buf_len, parsed_reque
  * Returns 0 on success, -1 if buf_len is less than 3.
  */
 int parse_pgn_59904_payload(const uint8_t* buf, size_t buf_len, parsed_request_t* request);
+
+/**
+ * Parse PGN 60928 (Address Claimed) payload.
+ * The payload is always 8 bytes encoding the sender's J1939 NAME little-endian.
+ *
+ * @buf      Received payload buffer.
+ * @buf_len  Length of @buf in bytes.
+ * @request  request.name written with the sender's NAME on success.
+ *
+ * Returns 0 on success, -1 if buf_len is less than 8.
+ */
+int parse_pgn_60928_payload(const uint8_t* buf, size_t buf_len, parsed_request_t* request);
 
 #endif /* PGN_DATA_H */

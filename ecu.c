@@ -94,11 +94,27 @@ static void* rx_thread(void* arg) {
         if (parse_request(pgn, buf, len, &request) < 0)
             continue;
 
-        pthread_mutex_lock(&ctx->rxtx.mutex);
-        handle_request(request.pgn, src_addr, ctx->rxtx.request_queue,
-                       &ctx->rxtx.request_queue_count);
-        pthread_cond_signal(&ctx->rxtx.cond);
-        pthread_mutex_unlock(&ctx->rxtx.mutex);
+        switch (pgn) {
+        case PGN_59904:
+            /* Another node is requesting a PGN — queue it for TX. */
+            pthread_mutex_lock(&ctx->rxtx.mutex);
+            handle_request(request.pgn, src_addr, ctx->rxtx.request_queue,
+                           &ctx->rxtx.request_queue_count);
+            pthread_cond_signal(&ctx->rxtx.cond);
+            pthread_mutex_unlock(&ctx->rxtx.mutex);
+            break;
+
+        case PGN_60928:
+            /*
+             * Address Claimed — check for contention.
+             * If the sender's NAME is lower than ours and they are claiming
+             * our address we lost and need to reclaim another address.
+             * Cannot Claim Address frames (src_addr == 0xFE) are ignored.
+             */
+            if (src_addr != J1939_IDLE_ADDR && request.name < ECU_NAME.value)
+                can_address_claim_dynamic(ctx->rxtx.sock, ECU_NAME.value, PREFERRED_ADDRESS);
+            break;
+        }
     }
 
     printf("[rx] Thread exiting.\n");
