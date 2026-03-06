@@ -38,6 +38,16 @@ typedef struct {
     uint8_t requester_addr;
 } pgn_request_t;
 
+/**
+ * Output of parse_request().
+ * Fields are populated depending on which PGN was parsed.
+ */
+typedef struct {
+    uint64_t name;
+    uint32_t pgn;
+    uint8_t new_addr;
+} parsed_request_t;
+
 /* INIT */
 
 /**
@@ -100,17 +110,17 @@ int handle_request(uint32_t requested_pgn, uint8_t requester_addr, pgn_request_t
 /* PARSERS */
 
 /**
- * Parse a payload for any supported received PGN.
- * Selects the correct parser based on @pgn.
+ * Parse an incoming request frame for any supported PGN.
+ * Selects the correct parser based on @pgn and populates @request.
  *
- * @pgn            PGN number of the received frame.
- * @buf            Received payload buffer.
- * @buf_len        Length of @buf in bytes.
- * @requested_pgn  Written with the parsed requested PGN on success.
+ * @pgn      PGN number of the received frame.
+ * @buf      Received payload buffer.
+ * @buf_len  Length of @buf in bytes.
+ * @request  Populated with parsed data on success.
  *
  * Returns 0 on success, -1 if PGN is unsupported or payload is malformed.
  */
-int parse_payload(uint32_t pgn, const uint8_t* buf, size_t buf_len, uint32_t* requested_pgn);
+int parse_request(uint32_t pgn, const uint8_t* buf, size_t buf_len, parsed_request_t* request);
 
 /**
  * Parse PGN 59904 (Request PGN) payload.
@@ -123,6 +133,6 @@ int parse_payload(uint32_t pgn, const uint8_t* buf, size_t buf_len, uint32_t* re
  *
  * Returns 0 on success, -1 if buf_len is less than 3.
  */
-int parse_pgn_59904_payload(const uint8_t* buf, size_t buf_len, uint32_t* requested_pgn);
+int parse_pgn_59904_payload(const uint8_t* buf, size_t buf_len, parsed_request_t* request);
 
 #endif /* PGN_DATA_H */

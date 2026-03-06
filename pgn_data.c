@@ -84,24 +84,24 @@ int handle_request(uint32_t requested_pgn, uint8_t requester_addr, pgn_request_t
 
 /* PARSERS */
 
-int parse_payload(uint32_t pgn, const uint8_t* buf, size_t buf_len, uint32_t* requested_pgn) {
+int parse_payload(uint32_t pgn, const uint8_t* buf, size_t buf_len, parsed_request_t* request) {
     switch (pgn) {
     case PGN_59904:
-        return parse_pgn_59904_payload(buf, buf_len, requested_pgn);
+        return parse_pgn_59904_payload(buf, buf_len, request);
     default:
         fprintf(stderr, "parse_payload: unsupported PGN 0x%05X\n", pgn);
         return -1;
     }
 }
 
-int parse_pgn_59904_payload(const uint8_t* buf, size_t buf_len, uint32_t* requested_pgn) {
+int parse_pgn_59904_payload(const uint8_t* buf, size_t buf_len, parsed_request_t* request) {
     if (buf_len < 3) {
         fprintf(stderr, "parse_pgn_59904_payload: payload too short (%zu bytes)\n", buf_len);
         return -1;
     }
 
     /* PGN is encoded little-endian in 3 bytes. */
-    *requested_pgn = (uint32_t)buf[0] | ((uint32_t)buf[1] << 8) | ((uint32_t)buf[2] << 16);
+    request->pgn = (uint32_t)buf[0] | ((uint32_t)buf[1] << 8) | ((uint32_t)buf[2] << 16);
 
     return 0;
 }

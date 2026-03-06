@@ -90,12 +90,12 @@ static void* rx_thread(void* arg) {
         if (can_receive(ctx->rxtx.sock, &pgn, &src_addr, buf, sizeof(buf), &len) < 0)
             break;
 
-        uint32_t requested_pgn;
-        if (parse_payload(pgn, buf, len, &requested_pgn) < 0)
+        parsed_request_t request = {0};
+        if (parse_request(pgn, buf, len, &request) < 0)
             continue;
 
         pthread_mutex_lock(&ctx->rxtx.mutex);
-        handle_request(requested_pgn, src_addr, ctx->rxtx.request_queue,
+        handle_request(request.pgn, src_addr, ctx->rxtx.request_queue,
                        &ctx->rxtx.request_queue_count);
         pthread_cond_signal(&ctx->rxtx.cond);
         pthread_mutex_unlock(&ctx->rxtx.mutex);
