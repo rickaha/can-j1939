@@ -26,16 +26,14 @@
  */
 static int try_claim(int sock, uint64_t name, uint8_t addr) {
     // Retrieve the interface index stored during can_socket_create().
-    struct sockaddr_can bound;
-    memset(&bound, 0, sizeof(bound));
+    struct sockaddr_can bound = {0};
     socklen_t bound_len = sizeof(bound);
     if (getsockname(sock, (struct sockaddr*)&bound, &bound_len) < 0) {
         perror("try_claim: getsockname");
         return -1;
     }
 
-    struct sockaddr_can addr_can;
-    memset(&addr_can, 0, sizeof(addr_can));
+    struct sockaddr_can addr_can = {0};
     addr_can.can_family = AF_CAN;
     addr_can.can_ifindex = bound.can_ifindex;
     addr_can.can_addr.j1939.name = name;
@@ -68,8 +66,7 @@ static int try_claim(int sock, uint64_t name, uint8_t addr) {
     // Send the Address Claimed frame.
     // Payload is our 64-bit NAME in little-endian.
     uint64_t name_le = htole64(name);
-    struct sockaddr_can claim_addr;
-    memset(&claim_addr, 0, sizeof(claim_addr));
+    struct sockaddr_can claim_addr = {0};
     claim_addr.can_family = AF_CAN;
     claim_addr.can_addr.j1939.addr = J1939_NO_ADDR;
     claim_addr.can_addr.j1939.pgn = J1939_PGN_ADDRESS_CLAIMED;
@@ -101,8 +98,6 @@ static int try_claim(int sock, uint64_t name, uint8_t addr) {
 /* SOCKET */
 
 int can_socket_create(const char* ifname) {
-    struct ifreq ifr;
-
     // Create the J1939 Socket
     int sock = socket(AF_CAN, SOCK_DGRAM, CAN_J1939);
     if (sock < 0) {
@@ -111,7 +106,7 @@ int can_socket_create(const char* ifname) {
     }
 
     // Get the interface index
-    memset(&ifr, 0, sizeof(ifr));
+    struct ifreq ifr = {0};
     strncpy(ifr.ifr_name, ifname, IFNAMSIZ - 1);
     if (ioctl(sock, SIOCGIFINDEX, &ifr) < 0) {
         perror("can_socket_create: SIOCGIFINDEX");
@@ -121,8 +116,7 @@ int can_socket_create(const char* ifname) {
 
     // Bind with J1939_NO_NAME and J1939_IDLE_ADDR to register the
     // interface index with the socket before address claiming.
-    struct sockaddr_can addr_can;
-    memset(&addr_can, 0, sizeof(addr_can));
+    struct sockaddr_can addr_can = {0};
     addr_can.can_family = AF_CAN;
     addr_can.can_ifindex = ifr.ifr_ifindex;
     addr_can.can_addr.j1939.name = J1939_NO_NAME;
@@ -161,8 +155,7 @@ int can_address_claim_dynamic(int sock, uint64_t name, uint8_t preferred_addr) {
     socklen_t bound_len = sizeof(bound);
     getsockname(sock, (struct sockaddr*)&bound, &bound_len);
 
-    struct sockaddr_can idle;
-    memset(&idle, 0, sizeof(idle));
+    struct sockaddr_can idle = {0};
     idle.can_family = AF_CAN;
     idle.can_ifindex = bound.can_ifindex;
     idle.can_addr.j1939.name = name;
