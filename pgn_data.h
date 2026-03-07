@@ -17,6 +17,7 @@
 #define PGN_59392 0x00E800U /* Acknowledgement (PDU1)          */
 #define PGN_59904 0x00EA00U /* Request PGN (PDU1)              */
 #define PGN_60928 0x00EE00U /* Address Claimed (PDU2)          */
+#define PGN_64965 0x00FDC5U /* ECU Identification (PDU2)       */
 #define PGN_65240 0x00FED8U /* Commanded Address (PDU2)        */
 #define PGN_65242 0x00FEDAU /* Software Identification (PDU2)  */
 #define PGN_65259 0x00FEEBU /* Component Identification (PDU2) */
@@ -41,6 +42,17 @@ typedef struct {
 typedef struct {
     char version[64];
 } software_id_t;
+
+/**
+ * PGN 64965: ECU Identification.
+ * All fields are ASCII strings delimited by '*' in the payload.
+ */
+typedef struct {
+    char part_number[32];
+    char serial[32];
+    char location[32];
+    char type[32];
+} ecu_id_t;
 
 /**
  * A single on-request entry pushed onto the request queue.
@@ -68,8 +80,10 @@ typedef struct {
  *
  * @component_id   Device-specific component identification.
  * @software_id    Software identification strings.
+ * @ecu_id         ECU identification strings.
  */
-void pgn_data_init(const component_id_t* component_id, const software_id_t* software_id);
+void pgn_data_init(const component_id_t* component_id, const software_id_t* software_id,
+                   const ecu_id_t* ecu_id);
 
 /* BUILDERS */
 
@@ -121,10 +135,23 @@ int build_pgn_65242_payload(const software_id_t* software_id, uint8_t* buf, size
                             size_t* len);
 
 /**
- * Build the PGN 65259 payload.
+ * Build the PGN 64965 (ECU Identification) payload.
+ *
+ * Concatenates fields as PartNumber*Serial*Location*Type* into @buf.
+ *
+ * @ecu_id   Source struct holding the four identity strings.
+ * @buf      Caller-supplied buffer to write the payload into.
+ * @buf_len  Size of @buf in bytes.
+ * @len      Written with the number of bytes produced on success.
+ *
+ * Returns 0 on success, -1 if the payload would overflow @buf_len.
+ */
+int build_pgn_64965_payload(const ecu_id_t* ecu_id, uint8_t* buf, size_t buf_len, size_t* len);
+
+/**
+ * Build the PGN 65259 (Component Identification) payload.
  *
  * Concatenates fields as Make*Model*Serial*Unit* into @payload_buf.
- * The '*' delimiter is appended by this function — callers store plain strings.
  *
  * @component_id      Source struct holding the four identity strings.
  * @payload_buf       Caller-supplied buffer to write the payload into.
@@ -174,7 +201,7 @@ int parse_request(uint32_t pgn, const uint8_t* buf, size_t buf_len, parsed_reque
  *
  * @buf            Received payload buffer.
  * @buf_len        Length of @buf in bytes.
- * @requested_pgn  Written with the parsed PGN number on success.
+ * @request        Populated depending on which PGN was parsed.
  *
  * Returns 0 on success, -1 if buf_len is less than 3.
  */

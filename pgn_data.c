@@ -12,10 +12,12 @@
 
 static component_id_t component_id = {0};
 static software_id_t software_id = {0};
+static ecu_id_t ecu_id = {0};
 
-void pgn_data_init(const component_id_t* cid, const software_id_t* sid) {
+void pgn_data_init(const component_id_t* cid, const software_id_t* sid, const ecu_id_t* eid) {
     component_id = *cid;
     software_id = *sid;
+    ecu_id = *eid;
 }
 
 /* BUILDERS */
@@ -71,10 +73,20 @@ int build_pgn_65242_payload(const software_id_t* sid, uint8_t* buf, size_t buf_l
     return 0;
 }
 
+int build_pgn_64965_payload(const ecu_id_t* eid, uint8_t* buf, size_t buf_len, size_t* len) {
+    int written = snprintf((char*)buf, buf_len, "%s*%s*%s*%s*", eid->part_number, eid->serial,
+                           eid->location, eid->type);
+    if (written < 0 || (size_t)written >= buf_len) {
+        fprintf(stderr, "build_pgn_64965_payload: payload overflow\n");
+        return -1;
+    }
+
+    *len = (size_t)written;
+    return 0;
+}
+
 int build_pgn_65259_payload(const component_id_t* component_id, uint8_t* payload_buf,
                             size_t payload_buf_len, size_t* payload_len) {
-    memset(payload_buf, 0, payload_buf_len);
-
     /*
      * Build the format: Make*Model*Serial*Unit*
      * snprintf returns the number of bytes that would have been written
@@ -99,6 +111,8 @@ int build_payload(uint32_t pgn, const sensor_values_t* values, uint8_t* buf, siz
     (void)values; /* unused until sensor PGNs are implemented */
 
     switch (pgn) {
+    case PGN_64965:
+        return build_pgn_64965_payload(&ecu_id, buf, buf_len, len);
     case PGN_65259:
         return build_pgn_65259_payload(&component_id, buf, buf_len, len);
     case PGN_65242:
@@ -115,6 +129,7 @@ int handle_request(uint32_t requested_pgn, uint8_t requester_addr, pgn_request_t
                    uint8_t* queue_count) {
     /* Check if the requested PGN is in the supported table. */
     switch (requested_pgn) {
+    case PGN_64965:
     case PGN_65259:
     case PGN_65242:
         break;

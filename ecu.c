@@ -231,7 +231,13 @@ int main() {
     static const software_id_t SOFTWARE_ID = {
         .version = "1.0.0",
     };
-    pgn_data_init(&COMPONENT_ID, &SOFTWARE_ID);
+    static const ecu_id_t ECU_ID = {
+        .part_number = "PN-00001",
+        .serial = "SN-00001",
+        .location = "Main-Board",
+        .type = "Sensor-Hub",
+    };
+    pgn_data_init(&COMPONENT_ID, &SOFTWARE_ID, &ECU_ID);
 
     // Create socket and claim address dynamically.
     ctx.rxtx.sock = can_socket_create(CAN_INTERFACE);
@@ -257,7 +263,7 @@ int main() {
         return EXIT_FAILURE;
     }
 
-    printf("Successfully claimed address 0x%02X. Entering main loop...\n", PREFERRED_ADDRESS);
+    printf("Successfully claimed address 0x%02X. Entering main loop...\n", ctx.rxtx.claimed_addr);
 
     // Create threads in dependency order:
     // sensor first — TX depends on sensor values being available.
