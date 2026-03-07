@@ -150,8 +150,7 @@ int can_address_claim_dynamic(int sock, uint64_t name, uint8_t preferred_addr) {
     }
 
     // Range exhausted — send Cannot Claim Address (source = J1939_IDLE_ADDR = 0xFE).
-    struct sockaddr_can bound;
-    memset(&bound, 0, sizeof(bound));
+    struct sockaddr_can bound = {0};
     socklen_t bound_len = sizeof(bound);
     getsockname(sock, (struct sockaddr*)&bound, &bound_len);
 

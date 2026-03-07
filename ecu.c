@@ -34,6 +34,7 @@ static const device_name_t ECU_NAME = {
 
 typedef struct {
     int sock;
+    uint8_t claimed_addr;
     pthread_mutex_t mutex;
     pthread_cond_t cond;
     pgn_request_t request_queue[REQUEST_QUEUE_SIZE];
@@ -84,6 +85,7 @@ static void* rx_thread(void* arg) {
         size_t len;
         uint32_t pgn;
         uint8_t src_addr;
+        int new_addr;
 
         //  if returns -1 we break out of the loop, which exits the thread. That handles socket
         //  closure cleanly.
@@ -111,8 +113,17 @@ static void* rx_thread(void* arg) {
              * our address we lost and need to reclaim another address.
              * Cannot Claim Address frames (src_addr == 0xFE) are ignored.
              */
-            if (src_addr != J1939_IDLE_ADDR && request.name < ECU_NAME.value)
-                can_address_claim_dynamic(ctx->rxtx.sock, ECU_NAME.value, PREFERRED_ADDRESS);
+            if (src_addr != J1939_IDLE_ADDR && src_addr == ctx->rxtx.claimed_addr &&
+                request.name != ECU_NAME.value && request.name < ECU_NAME.value) {
+                new_addr = can_address_claim_dynamic(ctx->rxtx.sock, ECU_NAME.value,
+                                                     ctx->rxtx.claimed_addr + 1);
+                if (new_addr < 0) {
+                    fprintf(stderr, "[rx] Address range exhausted, shutting down.\n");
+                    ctx->running = 0;
+                    break;
+                }
+                ctx->rxtx.claimed_addr = (uint8_t)new_addr;
+            }
             break;
 
         case PGN_65240:
@@ -120,8 +131,19 @@ static void* rx_thread(void* arg) {
              * Commanded Address — another node is telling us to change address.
              * Only act if the target NAME matches ours.
              */
-            if (request.name == ECU_NAME.value)
-                can_address_claim(ctx->rxtx.sock, ECU_NAME.value, request.new_addr);
+            if (request.name == ECU_NAME.value) {
+                new_addr = can_address_claim(ctx->rxtx.sock, ECU_NAME.value, request.new_addr);
+                if (new_addr < 0) {
+                    new_addr = can_address_claim_dynamic(ctx->rxtx.sock, ECU_NAME.value,
+                                                         PREFERRED_ADDRESS);
+                    if (new_addr < 0) {
+                        fprintf(stderr, "[rx] Cannot claim any address, shutting down.\n");
+                        ctx->running = 0;
+                        break;
+                    }
+                }
+                ctx->rxtx.claimed_addr = (uint8_t)new_addr;
+            }
             break;
         }
     }
@@ -206,11 +228,13 @@ int main() {
                 CAN_INTERFACE);
         return EXIT_FAILURE;
     }
-    if (can_address_claim_dynamic(ctx.rxtx.sock, ECU_NAME.value, PREFERRED_ADDRESS) < 0) {
+    int addr = can_address_claim_dynamic(ctx.rxtx.sock, ECU_NAME.value, PREFERRED_ADDRESS);
+    if (addr < 0) {
         fprintf(stderr, "Failed to claim a J1939 address on %s.\n", CAN_INTERFACE);
         close(ctx.rxtx.sock);
         return EXIT_FAILURE;
     }
+    ctx.rxtx.claimed_addr = (uint8_t)addr;
 
     // Initialize synchronization primitives
     if (pthread_mutex_init(&ctx.rxtx.mutex, NULL) != 0 ||
