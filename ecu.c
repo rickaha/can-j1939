@@ -228,7 +228,10 @@ int main() {
         .serial = "SN-00001",
         .unit = "U-01",
     };
-    pgn_data_init(&COMPONENT_ID);
+    static const software_id_t SOFTWARE_ID = {
+        .version = "1.0.0",
+    };
+    pgn_data_init(&COMPONENT_ID, &SOFTWARE_ID);
 
     // Create socket and claim address dynamically.
     ctx.rxtx.sock = can_socket_create(CAN_INTERFACE);

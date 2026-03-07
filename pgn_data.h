@@ -18,6 +18,7 @@
 #define PGN_59904 0x00EA00U /* Request PGN (PDU1)              */
 #define PGN_60928 0x00EE00U /* Address Claimed (PDU2)          */
 #define PGN_65240 0x00FED8U /* Commanded Address (PDU2)        */
+#define PGN_65242 0x00FEDAU /* Software Identification (PDU2)  */
 #define PGN_65259 0x00FEEBU /* Component Identification (PDU2) */
 
 /* STRUCTS */
@@ -32,6 +33,14 @@ typedef struct {
     char serial[32];
     char unit[32];
 } component_id_t;
+
+/**
+ * PGN 65242: Software Identification.
+ * @version  Firmware version string (e.g. "1.0.0").
+ */
+typedef struct {
+    char version[64];
+} software_id_t;
 
 /**
  * A single on-request entry pushed onto the request queue.
@@ -58,8 +67,9 @@ typedef struct {
  * Call once from main() before starting threads.
  *
  * @component_id   Device-specific component identification.
+ * @software_id    Software identification strings.
  */
-void pgn_data_init(const component_id_t* component_id);
+void pgn_data_init(const component_id_t* component_id, const software_id_t* software_id);
 
 /* BUILDERS */
 
@@ -94,6 +104,21 @@ int build_payload(uint32_t pgn, const sensor_values_t* values, uint8_t* buf, siz
  */
 int build_pgn_59392_payload(uint8_t requester_addr, uint32_t requested_pgn, uint8_t* buf,
                             size_t buf_len, size_t* len);
+
+/**
+ * Build the PGN 65242 (Software Identification) payload.
+ *
+ * Format: 1 byte field count, followed by version string.
+ *
+ * @software_id   Source struct holding the version string.
+ * @buf           Caller-supplied buffer to write the payload into.
+ * @buf_len       Size of @buf in bytes.
+ * @len           Written with the number of bytes produced on success.
+ *
+ * Returns 0 on success, -1 if the payload would overflow @buf_len.
+ */
+int build_pgn_65242_payload(const software_id_t* software_id, uint8_t* buf, size_t buf_len,
+                            size_t* len);
 
 /**
  * Build the PGN 65259 payload.

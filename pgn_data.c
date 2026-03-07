@@ -11,9 +11,11 @@
 /* INIT */
 
 static component_id_t component_id = {0};
+static software_id_t software_id = {0};
 
-void pgn_data_init(const component_id_t* id) {
-    component_id = *id;
+void pgn_data_init(const component_id_t* cid, const software_id_t* sid) {
+    component_id = *cid;
+    software_id = *sid;
 }
 
 /* BUILDERS */
@@ -47,6 +49,28 @@ int build_pgn_59392_payload(uint8_t requester_addr, uint32_t requested_pgn, uint
     return 0;
 }
 
+int build_pgn_65242_payload(const software_id_t* sid, uint8_t* buf, size_t buf_len, size_t* len) {
+    if (buf_len < 2) {
+        fprintf(stderr, "build_pgn_65242_payload: buffer too small\n");
+        return -1;
+    }
+
+    /*
+     * Software Identification layout:
+     *   Byte 0: Number of fields (1 — version string only)
+     *   Bytes 1..N: Version string (not null-terminated in payload)
+     */
+    buf[0] = 1; /* one field */
+    int written = snprintf((char*)buf + 1, buf_len - 1, "%s", sid->version);
+    if (written < 0 || (size_t)written >= buf_len - 1) {
+        fprintf(stderr, "build_pgn_65242_payload: payload overflow\n");
+        return -1;
+    }
+
+    *len = (size_t)written + 1; /* +1 for the field count byte */
+    return 0;
+}
+
 int build_pgn_65259_payload(const component_id_t* component_id, uint8_t* payload_buf,
                             size_t payload_buf_len, size_t* payload_len) {
     memset(payload_buf, 0, payload_buf_len);
@@ -77,6 +101,8 @@ int build_payload(uint32_t pgn, const sensor_values_t* values, uint8_t* buf, siz
     switch (pgn) {
     case PGN_65259:
         return build_pgn_65259_payload(&component_id, buf, buf_len, len);
+    case PGN_65242:
+        return build_pgn_65242_payload(&software_id, buf, buf_len, len);
     default:
         fprintf(stderr, "build_payload: unsupported PGN 0x%05X\n", pgn);
         return -1;
@@ -90,7 +116,7 @@ int handle_request(uint32_t requested_pgn, uint8_t requester_addr, pgn_request_t
     /* Check if the requested PGN is in the supported table. */
     switch (requested_pgn) {
     case PGN_65259:
-        // Add more cases here as you implement them
+    case PGN_65242:
         break;
 
     default:
