@@ -1,7 +1,84 @@
 #+TITLE: CAN-J1939
 #+AUTHOR: Rickard Häll
 
+A J1939 sensor node for Linux, built on top of the kernel J1939 socket stack.
+The node claims an address dynamically on startup, responds to identity requests
+from other nodes on the bus, and is designed to be extended with real sensor
+hardware.
+
+** Documentation
+- Kernel J1939 socket documentation: https://www.kernel.org/doc/Documentation/networking/j1939.rst
+- can-utils kickstart guide: https://github.com/linux-can/can-utils/blob/master/can-j1939-kickstart.md
+
+** Architecture
+
+Three threads operate concurrently over a single J1939 socket:
+
+- ~rx_thread~ — receives all incoming frames. Handles network management
+  (address contention, commanded address) directly and queues on-request PGN
+  responses for TX.
+- ~tx_thread~ — drains the request queue and sends PGN response payloads.
+  Will also handle periodic sensor PGN broadcasts once sensors are implemented.
+- ~sensor_thread~ — polls hardware sensors at configurable intervals and
+  writes values into a shared ~sensor_values_t~ struct protected by a mutex.
+
+#+BEGIN_SRC
+  ┌─────────────────────────────────────────────┐
+  │                   ecu.c                     │
+  │  rx_thread ──► request_queue ──► tx_thread  │
+  │      │                               │      │
+  │      │ (address mgmt)     (send PGNs)│      │
+  │      ▼                               ▼      │
+  │  stack_utils.c              pgn_data.c      │
+  │  (socket/address)           (builders)      │
+  │                                             │
+  │  sensor_thread ──► sensor_values_t          │
+  │  sensors.h                                  │
+  └─────────────────────────────────────────────┘
+#+END_SRC
+
+*** File Structure
+
+| File            | Purpose                                              |
+|-----------------+------------------------------------------------------|
+| ~ecu.c~         | Application entry point, threads, node identity     |
+| ~stack_utils.h~ | J1939 socket, address claiming, send/receive API    |
+| ~stack_utils.c~ | Implementation of the socket and transport layer    |
+| ~pgn_data.h~    | PGN definitions, structs, builder/parser API        |
+| ~pgn_data.c~    | PGN payload builders, request handler, parsers      |
+| ~sensors.h~     | ~sensor_values_t~, ~sensor_task_t~, read functions  |
+
+** Network Behavior
+
+*** Address Claiming
+On startup the node attempts dynamic address claiming starting at ~0x80~,
+scanning upward through ~0xF7~ until an unchallenged address is found.
+If the full range is exhausted a Cannot Claim Address frame is broadcast
+and the node shuts down.
+
+*** Contention Handling
+The RX thread monitors Address Claimed frames (~PGN 60928~). If another node
+claims our current address with a lower NAME value we yield and claim the next
+available address upward. If no address is available the node shuts down.
+
+*** Commanded Address
+If a Commanded Address frame (~PGN 65240~) is received targeting our NAME
+we attempt to claim the commanded address. If that address is contested we
+fall back to dynamic claiming from ~PREFERRED_ADDRESS~. If that also fails
+the node shuts down.
+
+*** Supported PGNs (on request)
+
+| PGN   | Name                   | Description                              |
+|-------+------------------------+------------------------------------------|
+| 65259 | Component Identification | Make, Model, Serial, Unit              |
+| 65242 | Software Identification  | Firmware version string                |
+| 64965 | ECU Identification       | Part number, Serial, Location, Type    |
+
+Any request for an unsupported PGN receives a NACK (~PGN 59392~) in response.
+
 ** Prerequisites
+
 Ensure your CAN interface is up and the J1939 stack is loaded.
 
 #+BEGIN_SRC bash
@@ -11,4 +88,62 @@ Ensure your CAN interface is up and the J1939 stack is loaded.
   # Bring up a virtual CAN interface (for testing)
   sudo ip link add dev vcan0 type vcan
   sudo ip link set vcan0 up
+#+END_SRC
+
+** Building
+
+#+BEGIN_SRC bash
+  make
+#+END_SRC
+
+** Running
+
+Start candump in a separate terminal to monitor all traffic.
+
+#+BEGIN_SRC bash
+  ./ecu
+#+END_SRC
+
+** Extending — Adding a Sensor
+
+*** 1. Add the value to ~sensor_values_t~ in ~sensors.h~
+#+BEGIN_SRC c
+  typedef struct {
+      float temperature; /* degrees Celsius */
+  } sensor_values_t;
+#+END_SRC
+
+*** 2. Implement the read function in ~sensors.h~
+#+BEGIN_SRC c
+  int sensor_temperature_read(void* value);
+#+END_SRC
+
+Implement it in a new ~sensors.c~ file, reading from hardware and writing
+the result into ~*(float*)value~. Return 0 on success, -1 on error.
+
+*** 3. Register the task in ~ecu.c~
+#+BEGIN_SRC c
+  static sensor_task_t sensor_tasks[] = {
+      {
+          .poll_rate_ms = 1000,
+          .read         = sensor_temperature_read,
+          .value        = &ctx.sensors.temperature,
+          .mutex        = &ctx.sensors_mutex,
+      },
+  };
+#+END_SRC
+
+*** 4. Add a PGN builder in ~pgn_data.c~
+Add a new ~build_pgn_XXXXX_payload()~ function, register it in
+~build_payload()~ and ~handle_request()~, and define the PGN number
+in ~pgn_data.h~.
+
+** Extending — Adding a Periodic PGN
+
+Once a sensor is implemented, wire it up in the TX thread periodic section
+in ~ecu.c~:
+
+#+BEGIN_SRC c
+  /* --- Periodic sensor PGNs --- */
+  
 #+END_SRC
