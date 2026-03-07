@@ -98,12 +98,21 @@ static void* rx_thread(void* arg) {
 
         switch (pgn) {
         case PGN_59904:
-            /* Another node is requesting a PGN — queue it for TX. */
+            /* Another node is requesting a PGN — queue it for TX.
+             * If the PGN is unsupported, send a NACK immediately. */
             pthread_mutex_lock(&ctx->rxtx.mutex);
-            handle_request(request.pgn, src_addr, ctx->rxtx.request_queue,
-                           &ctx->rxtx.request_queue_count);
-            pthread_cond_signal(&ctx->rxtx.cond);
-            pthread_mutex_unlock(&ctx->rxtx.mutex);
+            if (handle_request(request.pgn, src_addr, ctx->rxtx.request_queue,
+                               &ctx->rxtx.request_queue_count) < 0) {
+                pthread_mutex_unlock(&ctx->rxtx.mutex);
+                uint8_t nack_buf[8];
+                size_t nack_len;
+                if (build_pgn_59392_payload(src_addr, request.pgn, nack_buf, sizeof(nack_buf),
+                                            &nack_len) == 0)
+                    can_send(ctx->rxtx.sock, PGN_59392, src_addr, nack_buf, nack_len);
+            } else {
+                pthread_cond_signal(&ctx->rxtx.cond);
+                pthread_mutex_unlock(&ctx->rxtx.mutex);
+            }
             break;
 
         case PGN_60928:

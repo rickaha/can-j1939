@@ -18,6 +18,35 @@ void pgn_data_init(const component_id_t* id) {
 
 /* BUILDERS */
 
+int build_pgn_59392_payload(uint8_t requester_addr, uint32_t requested_pgn, uint8_t* buf,
+                            size_t buf_len, size_t* len) {
+    if (buf_len < 8) {
+        fprintf(stderr, "build_pgn_59392_payload: buffer too small\n");
+        return -1;
+    }
+
+    /*
+     * Acknowledgement frame layout (8 bytes):
+     *   Byte 0: Control byte — 0x01 = NACK
+     *   Byte 1: Group function value — 0xFF (not used)
+     *   Byte 2: 0xFF (reserved)
+     *   Byte 3: 0xFF (reserved)
+     *   Byte 4: Address of requester
+     *   Bytes 5-7: Requested PGN little-endian
+     */
+    buf[0] = 0x01; /* NACK */
+    buf[1] = 0xFF;
+    buf[2] = 0xFF;
+    buf[3] = 0xFF;
+    buf[4] = requester_addr;
+    buf[5] = (uint8_t)(requested_pgn & 0xFF);
+    buf[6] = (uint8_t)((requested_pgn >> 8) & 0xFF);
+    buf[7] = (uint8_t)((requested_pgn >> 16) & 0xFF);
+
+    *len = 8;
+    return 0;
+}
+
 int build_pgn_65259_payload(const component_id_t* component_id, uint8_t* payload_buf,
                             size_t payload_buf_len, size_t* payload_len) {
     memset(payload_buf, 0, payload_buf_len);

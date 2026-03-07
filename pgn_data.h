@@ -14,6 +14,7 @@
 
 /* PGN NUMBERS */
 
+#define PGN_59392 0x00E800U /* Acknowledgement (PDU1)          */
 #define PGN_59904 0x00EA00U /* Request PGN (PDU1)              */
 #define PGN_60928 0x00EE00U /* Address Claimed (PDU2)          */
 #define PGN_65240 0x00FED8U /* Commanded Address (PDU2)        */
@@ -76,6 +77,23 @@ void pgn_data_init(const component_id_t* component_id);
  */
 int build_payload(uint32_t pgn, const sensor_values_t* values, uint8_t* buf, size_t buf_len,
                   size_t* len);
+
+/**
+ * Build the PGN 59392 (Acknowledgement / NACK) payload.
+ *
+ * Produces an 8-byte NACK directed at @requester_addr for the
+ * unsupported @requested_pgn.
+ *
+ * @requester_addr   SA of the node that sent the request.
+ * @requested_pgn    The PGN that was requested but is not supported.
+ * @buf              Caller-supplied buffer (must be >= 8 bytes).
+ * @buf_len          Size of @buf in bytes.
+ * @len              Written with 8 on success.
+ *
+ * Returns 0 on success, -1 if buf_len is less than 8.
+ */
+int build_pgn_59392_payload(uint8_t requester_addr, uint32_t requested_pgn, uint8_t* buf,
+                            size_t buf_len, size_t* len);
 
 /**
  * Build the PGN 65259 payload.
