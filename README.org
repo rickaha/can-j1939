@@ -17,8 +17,8 @@ Three threads operate concurrently over a single J1939 socket:
 - ~rx_thread~ — receives all incoming frames. Handles network management
   (address contention, commanded address) directly and queues on-request PGN
   responses for TX.
-- ~tx_thread~ — drains the request queue and sends PGN response payloads.
-  Will also handle periodic sensor PGN broadcasts once sensors are implemented.
+- ~tx_thread~ — drains the on-request queue and sends PGN response payloads.
+  Also broadcasts periodic sensor PGNs driven by ~pgn_tasks[]~.
 - ~sensor_thread~ — polls hardware sensors at configurable intervals and
   writes values into a shared ~sensor_values_t~ struct protected by a mutex.
 
@@ -39,14 +39,14 @@ Three threads operate concurrently over a single J1939 socket:
 
 *** File Structure
 
-| File            | Purpose                                              |
-|-----------------+------------------------------------------------------|
-| ~ecu.c~         | Application entry point, threads, node identity     |
-| ~stack_utils.h~ | J1939 socket, address claiming, send/receive API    |
-| ~stack_utils.c~ | Implementation of the socket and transport layer    |
-| ~pgn_data.h~    | PGN definitions, structs, builder/parser API        |
-| ~pgn_data.c~    | PGN payload builders, request handler, parsers      |
-| ~sensors.h~     | ~sensor_values_t~, ~sensor_task_t~, read functions  |
+| File            | Purpose                                                      |
+|-----------------+--------------------------------------------------------------|
+| ~ecu.c~         | Application entry point, threads, task tables, node identity |
+| ~stack_utils.h~ | J1939 socket, address claiming, send/receive API             |
+| ~stack_utils.c~ | Implementation of the socket and transport layer             |
+| ~pgn_data.h~    | PGN definitions, structs, builder/parser API                 |
+| ~pgn_data.c~    | PGN payload builders, request handler, parsers               |
+| ~sensors.h~     | ~sensor_values_t~, ~sensor_task_t~, read/write functions     |
 
 ** Network Behavior
 
@@ -69,11 +69,11 @@ the node shuts down.
 
 *** Supported PGNs (on request)
 
-| PGN   | Name                   | Description                              |
-|-------+------------------------+------------------------------------------|
-| 65259 | Component Identification | Make, Model, Serial, Unit              |
-| 65242 | Software Identification  | Firmware version string                |
-| 64965 | ECU Identification       | Part number, Serial, Location, Type    |
+| PGN   | Name                     | Description                           |
+|-------+--------------------------+---------------------------------------|
+| 65259 | Component Identification | Make, Model, Serial, Unit             |
+| 65242 | Software Identification  | Firmware version string               |
+| 64965 | ECU Identification       | Part number, Serial, Location, Type   |
 
 Any request for an unsupported PGN receives a NACK (~PGN 59392~) in response.
 
@@ -96,14 +96,6 @@ Ensure your CAN interface is up and the J1939 stack is loaded.
   make
 #+END_SRC
 
-** Running
-
-Start candump in a separate terminal to monitor all traffic.
-
-#+BEGIN_SRC bash
-  ./ecu
-#+END_SRC
-
 ** Extending — Adding a Sensor
 
 *** 1. Add the value to ~sensor_values_t~ in ~sensors.h~
@@ -113,13 +105,36 @@ Start candump in a separate terminal to monitor all traffic.
   } sensor_values_t;
 #+END_SRC
 
-*** 2. Implement the read function in ~sensors.h~
+*** 2. Implement read and write functions in ~sensors.h~ and ~sensors.c~
+
+The ~read~ function reads raw bytes from hardware into a caller-supplied buffer.
+No lock is held during this call.
+
 #+BEGIN_SRC c
-  int sensor_temperature_read(void* value);
+  int sensor_temperature_read(void* buf);
 #+END_SRC
 
-Implement it in a new ~sensors.c~ file, reading from hardware and writing
-the result into ~*(float*)value~. Return 0 on success, -1 on error.
+The ~write~ function knows the type of the raw buffer and writes the value into
+the correct field of ~sensor_values_t~. This is called under the sensors mutex.
+
+#+BEGIN_SRC c
+  int sensor_temperature_write(sensor_values_t* sensors, const void* buf);
+#+END_SRC
+
+Example implementations in ~sensors.c~:
+
+#+BEGIN_SRC c
+  int sensor_temperature_read(void* buf) {
+      float value = /* read from hardware */;
+      memcpy(buf, &value, sizeof(float));
+      return 0;
+  }
+
+  int sensor_temperature_write(sensor_values_t* sensors, const void* buf) {
+      memcpy(&sensors->temperature, buf, sizeof(float));
+      return 0;
+  }
+#+END_SRC
 
 *** 3. Register the task in ~ecu.c~
 #+BEGIN_SRC c
@@ -127,8 +142,7 @@ the result into ~*(float*)value~. Return 0 on success, -1 on error.
       {
           .poll_rate_ms = 1000,
           .read         = sensor_temperature_read,
-          .value        = &ctx.sensors.temperature,
-          .mutex        = &ctx.sensors_mutex,
+          .write        = sensor_temperature_write,
       },
   };
 #+END_SRC
@@ -140,10 +154,16 @@ in ~pgn_data.h~.
 
 ** Extending — Adding a Periodic PGN
 
-Once a sensor is implemented, wire it up in the TX thread periodic section
-in ~ecu.c~:
+Periodic PGN broadcasts are driven by ~pgn_tasks[]~ in ~ecu.c~. The TX thread
+loops over the table every 10ms, checks elapsed time against each entry's
+~tx_rate_ms~, snapshots ~sensor_values_t~ under the mutex, then calls
+~build_payload()~ and ~can_send()~ — no per-PGN logic in the thread itself.
+
+Add a PGN builder in ~pgn_data.c~, register it in ~build_payload()~, and add
+an entry to ~pgn_tasks[]~:
 
 #+BEGIN_SRC c
-  /* --- Periodic sensor PGNs --- */
-  
+  static pgn_task_t pgn_tasks[] = {
+      { .pgn = PGN_XXXXX, .tx_rate_ms = 1000 },
+  };
 #+END_SRC
