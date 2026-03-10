@@ -48,6 +48,12 @@ typedef struct {
     pthread_mutex_t sensors_mutex;
 } node_ctx_t;
 
+typedef struct {
+    uint32_t pgn;
+    uint32_t tx_rate_ms;
+    uint64_t last_tx_ms;
+} pgn_task_t;
+
 /* Tasks */
 
 static sensor_task_t sensor_tasks[] = {
@@ -57,6 +63,13 @@ static sensor_task_t sensor_tasks[] = {
 };
 
 static const size_t sensor_tasks_count = sizeof(sensor_tasks) / sizeof(sensor_tasks[0]);
+
+static pgn_task_t pgn_tasks[] = {
+    /* TODO: add periodic PGN tasks here */
+    /* { .pgn = PGN_XXXXX, .tx_rate_ms = 1000 }, */
+};
+
+static const size_t pgn_tasks_count = sizeof(pgn_tasks) / sizeof(pgn_tasks[0]);
 
 /* SENSORS POLL */
 
@@ -71,6 +84,14 @@ static void sensors_poll() {
      *   - update task.last_poll_ms */
     (void)sensor_tasks;
     (void)sensor_tasks_count;
+}
+
+/* HELPERS */
+
+static uint64_t get_time_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)ts.tv_nsec / 1000000ULL;
 }
 
 /* THREADS */
@@ -167,9 +188,16 @@ static void* tx_thread(void* arg) {
     printf("[tx] Thread started. tid=%lu\n", pthread_self());
 
     while (ctx->running) {
-        // Wait for RX signal or periodic timeout
+        // Wait for RX signal or wake up every 10ms to service periodic PGNs.
         pthread_mutex_lock(&ctx->rxtx.mutex);
-        pthread_cond_wait(&ctx->rxtx.cond, &ctx->rxtx.mutex);
+        struct timespec deadline;
+        clock_gettime(CLOCK_REALTIME, &deadline);
+        deadline.tv_nsec += 10000000L; /* 10ms */
+        if (deadline.tv_nsec >= 1000000000L) {
+            deadline.tv_sec++;
+            deadline.tv_nsec -= 1000000000L;
+        }
+        pthread_cond_timedwait(&ctx->rxtx.cond, &ctx->rxtx.mutex, &deadline);
 
         // Drain on-request queue
         while (ctx->rxtx.request_queue_count > 0) {
@@ -189,13 +217,23 @@ static void* tx_thread(void* arg) {
 
         pthread_mutex_unlock(&ctx->rxtx.mutex);
 
-        /* --- Periodic sensor PGNs ---------------------------------------- */
-        /* For each periodic PGN:
-         *   - lock sensors mutex
-         *   - read sensor value into local variable
-         *   - unlock sensors mutex
-         *   - build_payload(pgn, &ctx->sensors, buf, sizeof(buf), &len)
-         *   - can_send() */
+        // Periodic sensor PGNs
+        uint64_t now_ms = get_time_ms();
+        for (size_t i = 0; i < pgn_tasks_count; i++) {
+            if (now_ms - pgn_tasks[i].last_tx_ms < pgn_tasks[i].tx_rate_ms)
+                continue;
+
+            pthread_mutex_lock(&ctx->sensors_mutex);
+            sensor_values_t sensors = ctx->sensors;
+            pthread_mutex_unlock(&ctx->sensors_mutex);
+
+            uint8_t pbuf[CAN_MAX_PAYLOAD];
+            size_t plen;
+            if (build_payload(pgn_tasks[i].pgn, &sensors, pbuf, sizeof(pbuf), &plen) == 0)
+                can_send(ctx->rxtx.sock, pgn_tasks[i].pgn, J1939_NO_ADDR, pbuf, plen);
+
+            pgn_tasks[i].last_tx_ms = now_ms;
+        }
     }
 
     printf("[tx] Thread exiting.\n");
