@@ -54,12 +54,20 @@ typedef struct {
     uint64_t last_tx_ms;
 } pgn_task_t;
 
-/* Tasks */
+/* HELPERS */
+
+static uint64_t get_time_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)ts.tv_nsec / 1000000ULL;
+}
+
+/* TASKS */
 
 static sensor_task_t sensor_tasks[] = {
     /* TODO: add sensor tasks here */
-    //  { .poll_rate_ms = 1000, .read = sensor_temperature_read, .value = &ctx.sensors.temperature,
-    //  .mutex = &ctx.sensors_mutex},
+    /* { .poll_rate_ms = 1000, .read = sensor_temperature_read, .write = sensor_temperature_write },
+     */
 };
 
 static const size_t sensor_tasks_count = sizeof(sensor_tasks) / sizeof(sensor_tasks[0]);
@@ -73,25 +81,27 @@ static const size_t pgn_tasks_count = sizeof(pgn_tasks) / sizeof(pgn_tasks[0]);
 
 /* SENSORS POLL */
 
-static void sensors_poll() {
-    /* TODO: get monotonic timestamp (clock_gettime CLOCK_MONOTONIC).
-     * For each task in sensor_tasks:
-     *   - check if poll interval has elapsed since last_poll_ms
-     *   - call task.read(task.value) into a local variable — no lock held
-     *   - lock task.mutex
-     *   - write local variable to task.value
-     *   - unlock task.mutex
-     *   - update task.last_poll_ms */
-    (void)sensor_tasks;
-    (void)sensor_tasks_count;
-}
+static void sensors_poll(node_ctx_t* ctx) {
+    uint64_t now_ms = get_time_ms();
 
-/* HELPERS */
+    for (size_t i = 0; i < sensor_tasks_count; i++) {
+        if (now_ms - sensor_tasks[i].last_poll_ms < sensor_tasks[i].poll_rate_ms)
+            continue;
 
-static uint64_t get_time_ms(void) {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)ts.tv_nsec / 1000000ULL;
+        /* Read from hardware into local buffer — no lock held during hardware access. */
+        uint8_t buf[64];
+        if (sensor_tasks[i].read(buf) < 0) {
+            sensor_tasks[i].last_poll_ms = now_ms;
+            continue;
+        }
+
+        /* Write into sensor_values_t under the mutex. */
+        pthread_mutex_lock(&ctx->sensors_mutex);
+        sensor_tasks[i].write(&ctx->sensors, buf);
+        pthread_mutex_unlock(&ctx->sensors_mutex);
+
+        sensor_tasks[i].last_poll_ms = now_ms;
+    }
 }
 
 /* THREADS */
@@ -246,7 +256,7 @@ static void* sensor_thread(void* arg) {
     printf("[sensor] Thread started. tid=%lu\n", pthread_self());
 
     while (ctx->running) {
-        sensors_poll();
+        sensors_poll(ctx);
     }
 
     printf("[sensor] Thread exiting.\n");

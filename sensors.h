@@ -6,7 +6,6 @@
 #ifndef SENSORS_H
 #define SENSORS_H
 
-#include <pthread.h>
 #include <stdint.h>
 
 /* STRUCTS */
@@ -15,7 +14,7 @@
  * Device-specific sensor values.
  * Add a field for each sensor wired up on this device.
  * e.g. float temperature;
- *      float humidity;
+ *      uint32_t pressure;
  */
 typedef struct {
     /* Sensor values go here as they are implemented */
@@ -27,22 +26,28 @@ typedef struct {
  *
  * @poll_rate_ms   How often this sensor should be polled in milliseconds.
  * @last_poll_ms   Timestamp of last poll (monotonic). Updated by sensors_poll().
- * @read           Function pointer to the sensor read function.
- * @value          Pointer to the corresponding field in sensor_values_t.
- * @mutex          Pointer to the mutex protecting sensor_values_t.
+ * @read           Reads from hardware into a caller-supplied raw buffer.
+ *                 Returns 0 on success, -1 on error.
+ * @write          Writes the raw buffer into the correct field of sensor_values_t.
+ *                 Called under the sensors mutex. Returns 0 on success, -1 on error.
  */
 typedef struct {
     uint32_t poll_rate_ms;
-    uint32_t last_poll_ms;
-    int (*read)(void* value);
-    void* value;
-    pthread_mutex_t* mutex;
+    uint64_t last_poll_ms;
+    int (*read)(void* buf);
+    int (*write)(sensor_values_t* sensors, const void* buf);
 } sensor_task_t;
 
-/* READ */
+/* READ FUNCTIONS */
 
 /* Sensor read functions go here as they are implemented.
- * e.g. int sensor_temperature_read(void *value);
- *      int sensor_gps_read(void *value);          */
+ * e.g. int sensor_temperature_read(void* buf);
+ *      int sensor_pressure_read(void* buf);     */
+
+/* WRITE FUNCTIONS */
+
+/* Sensor write functions go here as they are implemented.
+ * e.g. int sensor_temperature_write(sensor_values_t* sensors, const void* buf);
+ *      int sensor_pressure_write(sensor_values_t* sensors, const void* buf);   */
 
 #endif /* SENSORS_H */
