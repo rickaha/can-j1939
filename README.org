@@ -2,9 +2,8 @@
 #+AUTHOR: Rickard Häll
 
 A J1939 sensor node for Linux, built on top of the kernel J1939 socket stack.
-The node claims an address dynamically on startup, responds to identity requests
-from other nodes on the bus, and is designed to be extended with real sensor
-hardware.
+The node claims an address dynamically on startup, responds to identity and
+sensor data requests from other nodes, and broadcasts periodic sensor PGNs.
 
 ** Documentation
 - Kernel J1939 socket documentation: https://www.kernel.org/doc/Documentation/networking/j1939.rst
@@ -47,6 +46,7 @@ Three threads operate concurrently over a single J1939 socket:
 | ~pgn_data.h~    | PGN definitions, structs, builder/parser API                 |
 | ~pgn_data.c~    | PGN payload builders, request handler, parsers               |
 | ~sensors.h~     | ~sensor_values_t~, ~sensor_task_t~, read/write functions     |
+| ~sensors.c~     | Sensor read/write implementations                            |
 
 ** Network Behavior
 
@@ -74,8 +74,18 @@ the node shuts down.
 | 65259 | Component Identification | Make, Model, Serial, Unit             |
 | 65242 | Software Identification  | Firmware version string               |
 | 64965 | ECU Identification       | Part number, Serial, Location, Type   |
+| 65269 | Ambient Conditions       | Temperature sensors                   |
 
 Any request for an unsupported PGN receives a NACK (~PGN 59392~) in response.
+
+*** Periodic PGNs
+
+| PGN   | Name               | Rate | Description                       |
+|-------+--------------------+------+-----------------------------------|
+| 65269 | Ambient Conditions | 1 s  | Temperature sensors               |
+
+Unimplemented SPNs within a PGN are encoded as ~0xFF~ / ~0xFFFF~ (not available)
+until the corresponding sensor is added.
 
 ** Prerequisites
 
@@ -101,7 +111,7 @@ Ensure your CAN interface is up and the J1939 stack is loaded.
 *** 1. Add the value to ~sensor_values_t~ in ~sensors.h~
 #+BEGIN_SRC c
   typedef struct {
-      float temperature; /* degrees Celsius */
+      float new_sensor;   /* SPN XXX — description */
   } sensor_values_t;
 #+END_SRC
 
@@ -111,27 +121,27 @@ The ~read~ function reads raw bytes from hardware into a caller-supplied buffer.
 No lock is held during this call.
 
 #+BEGIN_SRC c
-  int sensor_temperature_read(void* buf);
+  int new_sensor_read(void* buf);
 #+END_SRC
 
 The ~write~ function knows the type of the raw buffer and writes the value into
 the correct field of ~sensor_values_t~. This is called under the sensors mutex.
 
 #+BEGIN_SRC c
-  int sensor_temperature_write(sensor_values_t* sensors, const void* buf);
+  int new_sensor_write(sensor_values_t* sensors, const void* buf);
 #+END_SRC
 
 Example implementations in ~sensors.c~:
 
 #+BEGIN_SRC c
-  int sensor_temperature_read(void* buf) {
+  int new_sensor_read(void* buf) {
       float value = /* read from hardware */;
       memcpy(buf, &value, sizeof(float));
       return 0;
   }
 
-  int sensor_temperature_write(sensor_values_t* sensors, const void* buf) {
-      memcpy(&sensors->temperature, buf, sizeof(float));
+  int new_sensor_write(sensor_values_t* sensors, const void* buf) {
+      memcpy(&sensors->new_sensor, buf, sizeof(float));
       return 0;
   }
 #+END_SRC
@@ -139,18 +149,15 @@ Example implementations in ~sensors.c~:
 *** 3. Register the task in ~ecu.c~
 #+BEGIN_SRC c
   static sensor_task_t sensor_tasks[] = {
-      {
-          .poll_rate_ms = 1000,
-          .read         = sensor_temperature_read,
-          .write        = sensor_temperature_write,
-      },
+      { .poll_rate_ms = 1000, .read = new_sensor_read,    .write = new_sensor_write    },
   };
 #+END_SRC
 
-*** 4. Add a PGN builder in ~pgn_data.c~
-Add a new ~build_pgn_XXXXX_payload()~ function, register it in
-~build_payload()~ and ~handle_request()~, and define the PGN number
-in ~pgn_data.h~.
+*** 4. Update the PGN builder in ~pgn_data.c~
+Update the relevant ~build_pgn_XXXXX_payload()~ function to encode the new
+sensor value from ~sensor_values_t~ instead of outputting ~0xFF~. If the sensor
+belongs to a new PGN, add a new builder, register it in ~build_payload()~ and
+~handle_request()~, and define the PGN number in ~pgn_data.h~.
 
 ** Extending — Adding a Periodic PGN
 
