@@ -13,11 +13,9 @@
 /**
  * Device-specific sensor values.
  * Add a field for each sensor wired up on this device.
- * e.g. float temperature;
- *      uint32_t pressure;
  */
 typedef struct {
-    /* Sensor values go here as they are implemented */
+    float ambient_temp; /* Degrees Celsius */
 } sensor_values_t;
 
 /**
@@ -38,16 +36,18 @@ typedef struct {
     int (*write)(sensor_values_t* sensors, const void* buf);
 } sensor_task_t;
 
-/* READ FUNCTIONS */
+/**
+ * Read ambient temperature.
+ * Writes a float (degrees Celsius) into buf.
+ * Returns 0 on success, -1 on error.
+ */
+int ambient_temp_read(void* buf);
 
-/* Sensor read functions go here as they are implemented.
- * e.g. int sensor_temperature_read(void* buf);
- *      int sensor_pressure_read(void* buf);     */
-
-/* WRITE FUNCTIONS */
-
-/* Sensor write functions go here as they are implemented.
- * e.g. int sensor_temperature_write(sensor_values_t* sensors, const void* buf);
- *      int sensor_pressure_write(sensor_values_t* sensors, const void* buf);   */
+/**
+ * Write temperature value into sensor_values_t.
+ * Reads a float from buf and stores it in sensors->ambient_temp.
+ * Returns 0 on success, -1 on error.
+ */
+int ambient_temp_write(sensor_values_t* sensors, const void* buf);
 
 #endif /* SENSORS_H */
