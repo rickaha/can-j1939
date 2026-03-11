@@ -65,16 +65,13 @@ static uint64_t get_time_ms(void) {
 /* TASKS */
 
 static sensor_task_t sensor_tasks[] = {
-    /* TODO: add sensor tasks here */
-    /* { .poll_rate_ms = 1000, .read = sensor_temperature_read, .write = sensor_temperature_write },
-     */
+    {.poll_rate_ms = 1000, .read = ambient_temp_read, .write = ambient_temp_write},
 };
 
 static const size_t sensor_tasks_count = sizeof(sensor_tasks) / sizeof(sensor_tasks[0]);
 
 static pgn_task_t pgn_tasks[] = {
-    /* TODO: add periodic PGN tasks here */
-    /* { .pgn = PGN_XXXXX, .tx_rate_ms = 1000 }, */
+    {.pgn = PGN_65269, .tx_rate_ms = 1000},
 };
 
 static const size_t pgn_tasks_count = sizeof(pgn_tasks) / sizeof(pgn_tasks[0]);

@@ -21,6 +21,7 @@
 #define PGN_65240 0x00FED8U /* Commanded Address (PDU2)        */
 #define PGN_65242 0x00FEDAU /* Software Identification (PDU2)  */
 #define PGN_65259 0x00FEEBU /* Component Identification (PDU2) */
+#define PGN_65269 0x00FEF5U /* Ambient Conditions (PDU2)        */
 
 /* STRUCTS */
 
@@ -162,6 +163,22 @@ int build_pgn_64965_payload(const ecu_id_t* ecu_id, uint8_t* buf, size_t buf_len
  */
 int build_pgn_65259_payload(const component_id_t* component_id, uint8_t* payload_buf,
                             size_t payload_buf_len, size_t* payload_len);
+
+/**
+ * Build the PGN 65269 (Ambient Conditions) payload.
+ *
+ * SPNs without an implemented sensor
+ * are encoded as 0xFF / 0xFFFF (not available).
+ *
+ * @values   Current sensor values.
+ * @buf      Caller-supplied buffer (must be >= 8 bytes).
+ * @buf_len  Size of @buf in bytes.
+ * @len      Written with 8 on success.
+ *
+ * Returns 0 on success, -1 if buf_len is less than 8.
+ */
+int build_pgn_65269_payload(const sensor_values_t* values, uint8_t* buf, size_t buf_len,
+                            size_t* len);
 
 /* REQUESTS */
 

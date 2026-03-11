@@ -3,7 +3,7 @@ CFLAGS = -D_DEFAULT_SOURCE -Wall -Wextra -std=c11 -g
 
 TARGET = ecu
 
-SRCS = ecu.c pgn_data.c stack_utils.c
+SRCS = ecu.c pgn_data.c stack_utils.c sensors.c
 OBJS = $(SRCS:.c=.o)
 
 all: $(TARGET)

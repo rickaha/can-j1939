@@ -104,15 +104,48 @@ int build_pgn_65259_payload(const component_id_t* component_id, uint8_t* payload
     return 0;
 }
 
+int build_pgn_65269_payload(const sensor_values_t* values, uint8_t* buf, size_t buf_len,
+                            size_t* len) {
+    if (buf_len < 8) {
+        fprintf(stderr, "build_pgn_65269_payload: buffer too small\n");
+        return -1;
+    }
+
+    /*
+     * PGN 65269 — Ambient Conditions, 8 bytes.
+     *
+     * Byte 0    SPN 108  Barometric pressure       0.5 hPa/bit (not-implemented)
+     * Bytes 1-2 SPN 170  Cab interior temperature  0.03125 deg C/bit, -273 offset (not-implemented)
+     * Bytes 3-4 SPN 171  Ambient air temperature   0.03125 deg C/bit, -273 offset
+     * Byte 5    SPN 172  Air inlet temperature     1 deg C/bit, -40 offset (not-implemented)
+     * Bytes 6-7 SPN 79   Road surface temperature  0.03125 deg C/bit, -273 offset (not-implemented)
+     */
+
+    buf[0] = 0xFF;
+    buf[1] = 0xFF;
+    buf[2] = 0xFF;
+
+    uint16_t ambient = (uint16_t)((values->ambient_temp + 273.0f) / 0.03125f);
+    buf[3] = (uint8_t)(ambient & 0xFF);
+    buf[4] = (uint8_t)((ambient >> 8) & 0xFF);
+    buf[5] = 0xFF;
+    buf[6] = 0xFF;
+    buf[7] = 0xFF;
+
+    *len = 8;
+    return 0;
+}
+
 /* DISPATCH */
 
 int build_payload(uint32_t pgn, const sensor_values_t* values, uint8_t* buf, size_t buf_len,
                   size_t* len) {
-    (void)values; /* unused until sensor PGNs are implemented */
 
     switch (pgn) {
     case PGN_64965:
         return build_pgn_64965_payload(&ecu_id, buf, buf_len, len);
+    case PGN_65269:
+        return build_pgn_65269_payload(values, buf, buf_len, len);
     case PGN_65259:
         return build_pgn_65259_payload(&component_id, buf, buf_len, len);
     case PGN_65242:
@@ -132,6 +165,7 @@ int handle_request(uint32_t requested_pgn, uint8_t requester_addr, pgn_request_t
     case PGN_64965:
     case PGN_65259:
     case PGN_65242:
+    case PGN_65269:
         break;
 
     default:

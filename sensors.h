@@ -15,7 +15,7 @@
  * Add a field for each sensor wired up on this device.
  */
 typedef struct {
-    float ambient_temp; /* Degrees Celsius */
+    float ambient_temp; /* SPN 171 — ambient air temperature, degrees Celsius */
 } sensor_values_t;
 
 /**
