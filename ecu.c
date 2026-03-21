@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 #include <unistd.h>
 
 /* STRUCTS */
@@ -110,8 +111,9 @@ static void* rx_thread(void* arg) {
         uint8_t src_addr;
         int new_addr;
 
-        //  if returns -1 we break out of the loop, which exits the thread. That handles socket
-        //  closure cleanly.
+        /*  if returns -1 we break out of the loop, which exits the thread. That handles socket
+         *  closure cleanly.
+         */
         if (can_receive(ctx->rxtx.sock, &pgn, &src_addr, buf, sizeof(buf), &len) < 0)
             break;
 
@@ -255,82 +257,76 @@ static void* sensor_thread(void* arg) {
     return NULL;
 }
 
-int main() {
-    printf("Starting J1939 Sensor Hub...\n");
+/* PUBLIC API */
 
-    ecu_ctx_t ctx = {0};
-    ctx.running = 1;
+void ecu_set_identity(const component_id_t* component_id, const software_id_t* software_id,
+                      const ecu_id_t* ecu_id) {
+    pgn_data_init(component_id, software_id, ecu_id);
+}
 
-    /* Initialise pgn_data with device-specific identity. */
-    static const component_id_t COMPONENT_ID = {
-        .make = "RPi",
-        .model = "Sensor-Hub",
-        .serial = "SN-00001",
-        .unit = "U-01",
-    };
-    static const software_id_t SOFTWARE_ID = {
-        .version = "1.0.0",
-    };
-    static const ecu_id_t ECU_ID = {
-        .part_number = "PN-00001",
-        .serial = "SN-00001",
-        .location = "Main-Board",
-        .type = "Sensor-Hub",
-    };
-    pgn_data_init(&COMPONENT_ID, &SOFTWARE_ID, &ECU_ID);
+void ecu_set_address_config(uint64_t name, uint8_t preferred_addr) {
+    ecu.name = name;
+    ecu.preferred_addr = preferred_addr;
+}
 
-    // Create socket and claim address dynamically.
-    ctx.rxtx.sock = can_socket_create(CAN_INTERFACE);
-    if (ctx.rxtx.sock < 0) {
-        fprintf(stderr, "Failed to create J1939 socket on %s. Is the interface up?\n",
-                CAN_INTERFACE);
-        return EXIT_FAILURE;
+int ecu_connect(const char* interface) {
+    ecu.rxtx.sock = can_socket_create(interface);
+    if (ecu.rxtx.sock < 0) {
+        fprintf(stderr, "ecu_connect: failed to create socket on %s\n", interface);
+        return -1;
     }
-    int addr = can_address_claim_dynamic(ctx.rxtx.sock, ECU_NAME.value, PREFERRED_ADDRESS);
-    if (addr < 0) {
-        fprintf(stderr, "Failed to claim a J1939 address on %s.\n", CAN_INTERFACE);
-        close(ctx.rxtx.sock);
-        return EXIT_FAILURE;
-    }
-    ctx.rxtx.claimed_addr = (uint8_t)addr;
-
-    // Initialize synchronization primitives
-    if (pthread_mutex_init(&ctx.rxtx.mutex, NULL) != 0 ||
-        pthread_cond_init(&ctx.rxtx.cond, NULL) != 0 ||
-        pthread_mutex_init(&ctx.sensors_mutex, NULL) != 0) {
-        perror("pthread mutex/cond init failed");
-        close(ctx.rxtx.sock);
-        return EXIT_FAILURE;
-    }
-
-    printf("Successfully claimed address 0x%02X. Entering main loop...\n", ctx.rxtx.claimed_addr);
-
-    // Create threads in dependency order:
-    // sensor first — TX depends on sensor values being available.
-    // RX before TX  — RX must be listening before TX starts sending.
-    pthread_t rx_tid, tx_tid, sensor_tid;
-    if (pthread_create(&sensor_tid, NULL, sensor_thread, &ctx) != 0 ||
-        pthread_create(&rx_tid, NULL, rx_thread, &ctx) != 0 ||
-        pthread_create(&tx_tid, NULL, tx_thread, &ctx) != 0) {
-        perror("pthread_create failed");
-        close(ctx.rxtx.sock);
-        pthread_mutex_destroy(&ctx.rxtx.mutex);
-        pthread_cond_destroy(&ctx.rxtx.cond);
-        pthread_mutex_destroy(&ctx.sensors_mutex);
-        return EXIT_FAILURE;
-    }
-
-    // Wait for all threads to finish (exit when they see running == 0)
-    pthread_join(sensor_tid, NULL);
-    pthread_join(rx_tid, NULL);
-    pthread_join(tx_tid, NULL);
-
-    // Cleanup
-    pthread_mutex_destroy(&ctx.rxtx.mutex);
-    pthread_cond_destroy(&ctx.rxtx.cond);
-    pthread_mutex_destroy(&ctx.sensors_mutex);
-    close(ctx.rxtx.sock);
-
-    printf("Sensor Hub shut down cleanly.\n");
     return 0;
+}
+
+int ecu_start(void) {
+    int addr = can_address_claim_dynamic(ecu.rxtx.sock, ecu.name, ecu.preferred_addr);
+    if (addr < 0) {
+        fprintf(stderr, "ecu_start: failed to claim address\n");
+        return -1;
+    }
+    ecu.rxtx.claimed_addr = (uint8_t)addr;
+
+    /* Initialize synchronization primitives */
+    if (pthread_mutex_init(&ecu.rxtx.mutex, NULL) != 0 ||
+        pthread_cond_init(&ecu.rxtx.cond, NULL) != 0 ||
+        pthread_mutex_init(&ecu.sensors_mutex, NULL) != 0) {
+        perror("ecu_start: pthread init failed");
+        return -1;
+    }
+
+    ecu.running = 1;
+
+    printf("Successfully claimed address 0x%02X. Entering main loop...\n", ecu.rxtx.claimed_addr);
+
+    /* Create threads in dependency order:
+     * sensor first — TX depends on sensor values being available.
+     * RX before TX  — RX must be listening before TX starts sending. */
+    if (pthread_create(&ecu.sensor_tid, NULL, sensor_thread, &ecu) != 0 ||
+        pthread_create(&ecu.rx_tid, NULL, rx_thread, &ecu) != 0 ||
+        pthread_create(&ecu.tx_tid, NULL, tx_thread, &ecu) != 0) {
+        perror("ecu_start: pthread_create failed");
+        ecu.running = 0;
+        return -1;
+    }
+
+    /*  Wait for all threads to finish (exit when they see running == 0) */
+    pthread_join(ecu.sensor_tid, NULL);
+    pthread_join(ecu.rx_tid, NULL);
+    pthread_join(ecu.tx_tid, NULL);
+
+    return 0;
+}
+
+void ecu_stop(void) {
+    ecu.running = 0;
+}
+
+void ecu_disconnect(void) {
+    if (ecu.rxtx.sock >= 0) {
+        close(ecu.rxtx.sock);
+        ecu.rxtx.sock = -1;
+    }
+    pthread_mutex_destroy(&ecu.rxtx.mutex);
+    pthread_cond_destroy(&ecu.rxtx.cond);
+    pthread_mutex_destroy(&ecu.sensors_mutex);
 }
