@@ -3,6 +3,7 @@
  *
  * Copyright (c) 2026 Rickard Häll
  */
+#include "ecu.h"
 #include "pgn_data.h"
 #include "sensors.h"
 #include "stack_utils.h"
@@ -12,23 +13,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-
-#define PREFERRED_ADDRESS 0x80
-#define CAN_INTERFACE "vcan0"
-
-/* NODE IDENTITY */
-
-static const device_name_t ECU_NAME = {
-    .identity_number = 0x003039, // Decimal 12345
-    .mfg_code = 0x3FF,           // Reserved/Non-specific
-    .function_inst = 0x00,       // First instance
-    .function = 0x19,            // 25 = Peripheral Device
-    .reserved = 0x0,             // Must be 0
-    .vehicle_system = 0x00,      // Non-specific
-    .system_inst = 0x00,         // First instance
-    .industry_group = 0x05,      // 5 = Industrial/Process Control
-    .arbitrary_addr = 0x01       // Enable Dynamic Address Claiming
-};
 
 /* STRUCTS */
 
@@ -46,13 +30,24 @@ typedef struct {
     rxtx_ctx_t rxtx;
     sensor_values_t sensors;
     pthread_mutex_t sensors_mutex;
-} node_ctx_t;
+    pthread_t sensor_tid;
+    pthread_t rx_tid;
+    pthread_t tx_tid;
+    uint64_t name;
+    uint8_t preferred_addr;
+} ecu_ctx_t;
 
 typedef struct {
     uint32_t pgn;
     uint32_t tx_rate_ms;
     uint64_t last_tx_ms;
 } pgn_task_t;
+
+/* SINGLETON */
+
+static ecu_ctx_t ecu = {
+    .rxtx.sock = -1,
+};
 
 /* HELPERS */
 
@@ -78,7 +73,7 @@ static const size_t pgn_tasks_count = sizeof(pgn_tasks) / sizeof(pgn_tasks[0]);
 
 /* SENSORS POLL */
 
-static void sensors_poll(node_ctx_t* ctx) {
+static void sensors_poll(ecu_ctx_t* ctx) {
     uint64_t now_ms = get_time_ms();
 
     for (size_t i = 0; i < sensor_tasks_count; i++) {
@@ -104,7 +99,7 @@ static void sensors_poll(node_ctx_t* ctx) {
 /* THREADS */
 
 static void* rx_thread(void* arg) {
-    node_ctx_t* ctx = (node_ctx_t*)arg;
+    ecu_ctx_t* ctx = (ecu_ctx_t*)arg;
 
     printf("[rx] Thread started. tid=%lu\n", pthread_self());
 
@@ -151,8 +146,8 @@ static void* rx_thread(void* arg) {
              * Cannot Claim Address frames (src_addr == 0xFE) are ignored.
              */
             if (src_addr != J1939_IDLE_ADDR && src_addr == ctx->rxtx.claimed_addr &&
-                request.name != ECU_NAME.value && request.name < ECU_NAME.value) {
-                new_addr = can_address_claim_dynamic(ctx->rxtx.sock, ECU_NAME.value,
+                request.name != ctx->name && request.name < ctx->name) {
+                new_addr = can_address_claim_dynamic(ctx->rxtx.sock, ctx->name,
                                                      ctx->rxtx.claimed_addr + 1);
                 if (new_addr < 0) {
                     fprintf(stderr, "[rx] Address range exhausted, shutting down.\n");
@@ -168,11 +163,11 @@ static void* rx_thread(void* arg) {
              * Commanded Address — another node is telling us to change address.
              * Only act if the target NAME matches ours.
              */
-            if (request.name == ECU_NAME.value) {
-                new_addr = can_address_claim(ctx->rxtx.sock, ECU_NAME.value, request.new_addr);
+            if (request.name == ctx->name) {
+                new_addr = can_address_claim(ctx->rxtx.sock, ctx->name, request.new_addr);
                 if (new_addr < 0) {
-                    new_addr = can_address_claim_dynamic(ctx->rxtx.sock, ECU_NAME.value,
-                                                         PREFERRED_ADDRESS);
+                    new_addr =
+                        can_address_claim_dynamic(ctx->rxtx.sock, ctx->name, ctx->preferred_addr);
                     if (new_addr < 0) {
                         fprintf(stderr, "[rx] Cannot claim any address, shutting down.\n");
                         ctx->running = 0;
@@ -190,7 +185,7 @@ static void* rx_thread(void* arg) {
 }
 
 static void* tx_thread(void* arg) {
-    node_ctx_t* ctx = (node_ctx_t*)arg;
+    ecu_ctx_t* ctx = (ecu_ctx_t*)arg;
 
     printf("[tx] Thread started. tid=%lu\n", pthread_self());
 
@@ -248,7 +243,7 @@ static void* tx_thread(void* arg) {
 }
 
 static void* sensor_thread(void* arg) {
-    node_ctx_t* ctx = (node_ctx_t*)arg;
+    ecu_ctx_t* ctx = (ecu_ctx_t*)arg;
 
     printf("[sensor] Thread started. tid=%lu\n", pthread_self());
 
@@ -263,7 +258,7 @@ static void* sensor_thread(void* arg) {
 int main() {
     printf("Starting J1939 Sensor Hub...\n");
 
-    node_ctx_t ctx = {0};
+    ecu_ctx_t ctx = {0};
     ctx.running = 1;
 
     /* Initialise pgn_data with device-specific identity. */
