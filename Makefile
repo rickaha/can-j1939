@@ -1,18 +1,38 @@
-CC = gcc
-CFLAGS = -D_DEFAULT_SOURCE -Wall -Wextra -std=c11 -g
+CC       = gcc
+CFLAGS   = -D_DEFAULT_SOURCE -Wall -Wextra -std=c11 -g
+LDFLAGS  = -lpthread
+TARGET   = ecu
+BUILDDIR = build
 
-TARGET = ecu
+# Main application
+SRCS     = $(wildcard src/*.c)
+OBJS     = $(SRCS:src/%.c=$(BUILDDIR)/%.o)
+DEPS     = $(OBJS:.o=.d)
 
-SRCS = ecu.c pgn_data.c stack_utils.c sensors.c
-OBJS = $(SRCS:.c=.o)
+# Tools
+TOOL_SRCS = $(wildcard tools/*.c)
+TOOLS     = $(TOOL_SRCS:tools/%.c=$(BUILDDIR)/%)
 
-all: $(TARGET)
+.PHONY: all clean
 
-$(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS)
+all: $(BUILDDIR)/$(TARGET) $(TOOLS)
 
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+# Link main application
+$(BUILDDIR)/$(TARGET): $(OBJS) | $(BUILDDIR)
+	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDFLAGS)
+
+# Compile main application sources
+$(BUILDDIR)/%.o: src/%.c | $(BUILDDIR)
+	$(CC) $(CFLAGS) -MMD -MP -Isrc -c $< -o $@
+
+# Compile and link each tool (single file, no -lpthread needed)
+$(BUILDDIR)/%: tools/%.c | $(BUILDDIR)
+	$(CC) $(CFLAGS) -Isrc -o $@ $<
+
+$(BUILDDIR):
+	mkdir -p $(BUILDDIR)
+
+-include $(DEPS)
 
 clean:
-	rm -f $(OBJS) $(TARGET)
+	rm -rf $(BUILDDIR)
