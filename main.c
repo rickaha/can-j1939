@@ -3,6 +3,7 @@
  *
  * Copyright (c) 2026 Rickard Häll
  */
+#include "ecu.h"
 #include "pgn_data.h"
 #include "stack_utils.h"
 #include <stdio.h>
@@ -46,9 +47,17 @@ static const ecu_id_t ECU_ID = {
 int main(void) {
     printf("Starting J1939 Sensor Hub...\n");
 
-    /* * TODO: Migration Placeholder
-     * Call functions from ecu.c
-     */
+    ecu_set_identity(&COMPONENT_ID, &SOFTWARE_ID, &ECU_ID);
+    ecu_set_address_config(ECU_NAME.value, PREFERRED_ADDRESS);
+
+    if (ecu_connect(CAN_INTERFACE) < 0) {
+        fprintf(stderr, "Failed to connect to %s. Is the interface up?\n", CAN_INTERFACE);
+        return EXIT_FAILURE;
+    }
+
+    ecu_start(); /* blocks until shutdown */
+
+    ecu_disconnect();
 
     printf("Sensor Hub shut down cleanly.\n");
     return EXIT_SUCCESS;
