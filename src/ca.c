@@ -4,6 +4,7 @@
  * Copyright (c) 2026 Rickard Häll
  */
 #include "ca.h"
+#include "sensors.h"
 #include "time.h"
 #include <pthread.h>
 #include <signal.h>
@@ -173,7 +174,58 @@ ca_t* ca_create(const device_name_t* name, uint8_t preferred_addr, const ca_iden
     return ca;
 }
 
+void ca_destroy(ca_t* ca) {
+    pthread_mutex_destroy(&ca->tx_mutex);
+    pthread_cond_destroy(&ca->tx_cond);
+    pthread_mutex_destroy(&ca->sensors_mutex);
+    free(ca);
+}
+
 /* INTERNAL FUNCTIONS */
+
+uint8_t ca_get_claimed_addr(const ca_t* ca) {
+    return ca->claimed_addr;
+}
+
+int ca_start(ca_t* ca, int sock) {
+    ca->sock = sock;
+
+    int addr = can_address_claim_dynamic(ca->sock, ca->name, ca->preferred_addr);
+    if (addr < 0) {
+        fprintf(stderr, "ca_start: failed to claim address\n");
+        return -1;
+    }
+    ca->claimed_addr = (uint8_t)addr;
+
+    printf("CA claimed address 0x%02X\n", ca->claimed_addr);
+
+    if (pthread_mutex_init(&ca->tx_mutex, NULL) != 0 ||
+        pthread_cond_init(&ca->tx_cond, NULL) != 0 ||
+        pthread_mutex_init(&ca->sensors_mutex, NULL) != 0) {
+        perror("ca_start: pthread init failed");
+        return -1;
+    }
+
+    ca->running = 1;
+
+    /* sensor first — TX depends on sensor values being available. */
+    if (pthread_create(&ca->sensor_tid, NULL, sensor_thread, ca) != 0 ||
+        pthread_create(&ca->tx_tid, NULL, tx_thread, ca) != 0) {
+        perror("ca_start: pthread_create failed");
+        ca->running = 0;
+        return -1;
+    }
+
+    return 0;
+}
+
+void ca_stop(ca_t* ca) {
+    ca->running = 0;
+    pthread_cond_signal(&ca->tx_cond);
+    pthread_join(ca->sensor_tid, NULL);
+    pthread_join(ca->tx_tid, NULL);
+    printf("CA 0x%02X stopped\n", ca->claimed_addr);
+}
 
 void ca_receive(ca_t* ca, uint32_t pgn, uint8_t src_addr, const uint8_t* buf, size_t len,
                 int sock) {
