@@ -44,76 +44,15 @@ static void* rx_thread(void* arg) {
         size_t len;
         uint32_t pgn;
         uint8_t src_addr;
-        int new_addr;
 
-        /*  if returns -1 we break out of the loop, which exits the thread. That handles socket
-         *  closure cleanly.
-         */
-        if (can_receive(ctx->rxtx.sock, &pgn, &src_addr, buf, sizeof(buf), &len) < 0)
+        /* If returns -1 we break out of the loop, which exits the thread.
+         * That handles socket closure cleanly. */
+        if (can_receive(ctx->sock, &pgn, &src_addr, buf, sizeof(buf), &len) < 0)
             break;
 
-        parsed_request_t request = {0};
-        if (parse_request(pgn, buf, len, &request) < 0)
-            continue;
-
-        switch (pgn) {
-        case PGN_59904:
-            /* Another node is requesting a PGN — queue it for TX.
-             * If the PGN is unsupported, send a NACK immediately. */
-            pthread_mutex_lock(&ctx->rxtx.mutex);
-            if (handle_request(request.pgn, src_addr, ctx->rxtx.request_queue,
-                               &ctx->rxtx.request_queue_count) < 0) {
-                pthread_mutex_unlock(&ctx->rxtx.mutex);
-                uint8_t nack_buf[8];
-                size_t nack_len;
-                if (build_pgn_59392_payload(src_addr, request.pgn, nack_buf, sizeof(nack_buf),
-                                            &nack_len) == 0)
-                    can_send(ctx->rxtx.sock, PGN_59392, src_addr, nack_buf, nack_len);
-            } else {
-                pthread_cond_signal(&ctx->rxtx.cond);
-                pthread_mutex_unlock(&ctx->rxtx.mutex);
-            }
-            break;
-
-        case PGN_60928:
-            /*
-             * Address Claimed — check for contention.
-             * If the sender's NAME is lower than ours and they are claiming
-             * our address we lost and need to reclaim another address.
-             * Cannot Claim Address frames (src_addr == 0xFE) are ignored.
-             */
-            if (src_addr != J1939_IDLE_ADDR && src_addr == ctx->rxtx.claimed_addr &&
-                request.name != ctx->name && request.name < ctx->name) {
-                new_addr = can_address_claim_dynamic(ctx->rxtx.sock, ctx->name,
-                                                     ctx->rxtx.claimed_addr + 1);
-                if (new_addr < 0) {
-                    fprintf(stderr, "[rx] Address range exhausted, shutting down.\n");
-                    ctx->running = 0;
-                    break;
-                }
-                ctx->rxtx.claimed_addr = (uint8_t)new_addr;
-            }
-            break;
-
-        case PGN_65240:
-            /*
-             * Commanded Address — another node is telling us to change address.
-             * Only act if the target NAME matches ours.
-             */
-            if (request.name == ctx->name) {
-                new_addr = can_address_claim(ctx->rxtx.sock, ctx->name, request.new_addr);
-                if (new_addr < 0) {
-                    new_addr =
-                        can_address_claim_dynamic(ctx->rxtx.sock, ctx->name, ctx->preferred_addr);
-                    if (new_addr < 0) {
-                        fprintf(stderr, "[rx] Cannot claim any address, shutting down.\n");
-                        ctx->running = 0;
-                        break;
-                    }
-                }
-                ctx->rxtx.claimed_addr = (uint8_t)new_addr;
-            }
-            break;
+        /* Dispatch to the CA that owns the destination address. */
+        for (size_t i = 0; i < ctx->ca_count; i++) {
+            ca_receive(ctx->ca_list[i], pgn, src_addr, buf, len, ctx->sock);
         }
     }
 
@@ -122,16 +61,6 @@ static void* rx_thread(void* arg) {
 }
 
 /* PUBLIC API */
-
-void ecu_set_identity(const component_id_t* component_id, const software_id_t* software_id,
-                      const ecu_id_t* ecu_id) {
-    pgn_data_init(component_id, software_id, ecu_id);
-}
-
-void ecu_set_address_config(uint64_t name, uint8_t preferred_addr) {
-    ecu.name = name;
-    ecu.preferred_addr = preferred_addr;
-}
 
 int ecu_connect(const char* interface) {
     ecu.rxtx.sock = can_socket_create(interface);

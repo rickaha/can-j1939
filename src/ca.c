@@ -8,6 +8,7 @@
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 /* STRUCTS */
 
@@ -153,4 +154,90 @@ static void* tx_thread(void* arg) {
 
     printf("[tx] Thread exiting.\n");
     return NULL;
+}
+
+/* PUBLIC API */
+
+ca_t* ca_create(const device_name_t* name, uint8_t preferred_addr, const ca_identity_t* identity) {
+    ca_t* ca = calloc(1, sizeof *ca);
+    if (ca == NULL) {
+        perror("ca_create: calloc");
+        return NULL;
+    }
+
+    ca->name = name->value;
+    ca->preferred_addr = preferred_addr;
+    ca->identity = *identity;
+    ca->sock = -1;
+
+    return ca;
+}
+
+/* INTERNAL FUNCTIONS */
+
+void ca_receive(ca_t* ca, uint32_t pgn, uint8_t src_addr, const uint8_t* buf, size_t len,
+                int sock) {
+    parsed_request_t request = {0};
+    if (parse_request(pgn, buf, len, &request) < 0)
+        return;
+
+    int new_addr;
+
+    switch (pgn) {
+    case PGN_59904:
+        /* Another node is requesting a PGN — queue it for TX.
+         * If the PGN is unsupported, send a NACK immediately. */
+        pthread_mutex_lock(&ca->tx_mutex);
+        if (handle_request(request.pgn, src_addr, ca->request_queue, &ca->request_queue_count) <
+            0) {
+            pthread_mutex_unlock(&ca->tx_mutex);
+            uint8_t nack_buf[8];
+            size_t nack_len;
+            if (build_pgn_59392_payload(src_addr, request.pgn, nack_buf, sizeof(nack_buf),
+                                        &nack_len) == 0)
+                can_send(sock, PGN_59392, src_addr, nack_buf, nack_len);
+        } else {
+            pthread_cond_signal(&ca->tx_cond);
+            pthread_mutex_unlock(&ca->tx_mutex);
+        }
+        break;
+
+    case PGN_60928:
+        /*
+         * Address Claimed — check for contention.
+         * If the sender's NAME is lower than ours and they are claiming
+         * our address we lost and need to reclaim another address.
+         * Cannot Claim Address frames (src_addr == 0xFE) are ignored.
+         */
+        if (src_addr != J1939_IDLE_ADDR && src_addr == ca->claimed_addr &&
+            request.name != ca->name && request.name < ca->name) {
+            new_addr = can_address_claim_dynamic(sock, ca->name, ca->claimed_addr + 1);
+            if (new_addr < 0) {
+                fprintf(stderr, "[ca] Address range exhausted, shutting down.\n");
+                ca->running = 0;
+                break;
+            }
+            ca->claimed_addr = (uint8_t)new_addr;
+        }
+        break;
+
+    case PGN_65240:
+        /*
+         * Commanded Address — another node is telling us to change address.
+         * Only act if the target NAME matches ours.
+         */
+        if (request.name == ca->name) {
+            new_addr = can_address_claim(sock, ca->name, request.new_addr);
+            if (new_addr < 0) {
+                new_addr = can_address_claim_dynamic(sock, ca->name, ca->preferred_addr);
+                if (new_addr < 0) {
+                    fprintf(stderr, "[ca] Cannot claim any address, shutting down.\n");
+                    ca->running = 0;
+                    break;
+                }
+            }
+            ca->claimed_addr = (uint8_t)new_addr;
+        }
+        break;
+    }
 }
