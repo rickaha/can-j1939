@@ -7,6 +7,7 @@
 #include "time.h"
 #include <pthread.h>
 #include <signal.h>
+#include <stdio.h>
 
 /* STRUCTS */
 
@@ -54,3 +55,43 @@ static pgn_task_t pgn_tasks[] = {
 };
 
 static const size_t pgn_tasks_count = sizeof(pgn_tasks) / sizeof(pgn_tasks[0]);
+
+/* SENSORS POLL */
+
+static void sensors_poll(ca_t* ca) {
+    uint64_t now_ms = get_time_ms();
+
+    for (size_t i = 0; i < sensor_tasks_count; i++) {
+        if (now_ms - sensor_tasks[i].last_poll_ms < sensor_tasks[i].poll_rate_ms)
+            continue;
+
+        /* Read from hardware into local buffer — no lock held during hardware access. */
+        uint8_t buf[64];
+        if (sensor_tasks[i].read(buf) < 0) {
+            sensor_tasks[i].last_poll_ms = now_ms;
+            continue;
+        }
+
+        /* Write into sensor_values_t under the mutex. */
+        pthread_mutex_lock(&ca->sensors_mutex);
+        sensor_tasks[i].write(&ca->sensors, buf);
+        pthread_mutex_unlock(&ca->sensors_mutex);
+
+        sensor_tasks[i].last_poll_ms = now_ms;
+    }
+}
+
+/* THREADS */
+
+static void* sensor_thread(void* arg) {
+    ca_t* ca = (ca_t*)arg;
+
+    printf("[sensor] Thread started. tid=%lu\n", pthread_self());
+
+    while (ca->running) {
+        sensors_poll(ca);
+    }
+
+    printf("[sensor] Thread exiting.\n");
+    return NULL;
+}

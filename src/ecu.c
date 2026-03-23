@@ -32,31 +32,6 @@ static ecu_ctx_t ecu = {
     .sock = -1,
 };
 
-/* SENSORS POLL */
-
-static void sensors_poll(ecu_ctx_t* ctx) {
-    uint64_t now_ms = get_time_ms();
-
-    for (size_t i = 0; i < sensor_tasks_count; i++) {
-        if (now_ms - sensor_tasks[i].last_poll_ms < sensor_tasks[i].poll_rate_ms)
-            continue;
-
-        /* Read from hardware into local buffer — no lock held during hardware access. */
-        uint8_t buf[64];
-        if (sensor_tasks[i].read(buf) < 0) {
-            sensor_tasks[i].last_poll_ms = now_ms;
-            continue;
-        }
-
-        /* Write into sensor_values_t under the mutex. */
-        pthread_mutex_lock(&ctx->sensors_mutex);
-        sensor_tasks[i].write(&ctx->sensors, buf);
-        pthread_mutex_unlock(&ctx->sensors_mutex);
-
-        sensor_tasks[i].last_poll_ms = now_ms;
-    }
-}
-
 /* THREADS */
 
 static void* rx_thread(void* arg) {
@@ -201,19 +176,6 @@ static void* tx_thread(void* arg) {
     }
 
     printf("[tx] Thread exiting.\n");
-    return NULL;
-}
-
-static void* sensor_thread(void* arg) {
-    ecu_ctx_t* ctx = (ecu_ctx_t*)arg;
-
-    printf("[sensor] Thread started. tid=%lu\n", pthread_self());
-
-    while (ctx->running) {
-        sensors_poll(ctx);
-    }
-
-    printf("[sensor] Thread exiting.\n");
     return NULL;
 }
 
