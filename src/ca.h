@@ -10,4 +10,7 @@
 #include "stack_utils.h"
 #include <stdint.h>
 
+/* Opaque CA handle. */
+typedef struct ca_t ca_t;
+
 #endif /* CA_H */

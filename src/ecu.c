@@ -4,44 +4,32 @@
  * Copyright (c) 2026 Rickard Häll
  */
 #include "ecu.h"
+#include "ca.h"
 #include "pgn_data.h"
-#include "sensors.h"
 #include "stack_utils.h"
 #include <pthread.h>
-#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
 
+#define MAX_CA 8
+
 /* STRUCTS */
 
 typedef struct {
+    volatile int running;
     int sock;
-    uint8_t claimed_addr;
-    pthread_mutex_t mutex;
-    pthread_cond_t cond;
-    pgn_request_t request_queue[REQUEST_QUEUE_SIZE];
-    uint8_t request_queue_count;
-} rxtx_ctx_t;
-
-typedef struct {
-    volatile sig_atomic_t running;
-    rxtx_ctx_t rxtx;
-    sensor_values_t sensors;
-    pthread_mutex_t sensors_mutex;
-    pthread_t sensor_tid;
     pthread_t rx_tid;
-    pthread_t tx_tid;
-    uint64_t name;
-    uint8_t preferred_addr;
+    ca_t* ca_list[MAX_CA];
+    size_t ca_count;
 } ecu_ctx_t;
 
 /* SINGLETON */
 
 static ecu_ctx_t ecu = {
-    .rxtx.sock = -1,
+    .sock = -1,
 };
 
 /* SENSORS POLL */

@@ -5,6 +5,8 @@
  */
 #include "ca.h"
 #include "time.h"
+#include <pthread.h>
+#include <signal.h>
 
 /* STRUCTS */
 
@@ -13,6 +15,23 @@ typedef struct {
     uint32_t tx_rate_ms;
     uint64_t last_tx_ms;
 } pgn_task_t;
+
+struct ca_t {
+    volatile sig_atomic_t running;
+    int sock;
+    uint64_t name;
+    uint8_t preferred_addr;
+    uint8_t claimed_addr;
+    ca_identity_t identity;
+    sensor_values_t sensors;
+    pthread_mutex_t sensors_mutex;
+    pthread_mutex_t tx_mutex;
+    pthread_cond_t tx_cond;
+    pgn_request_t request_queue[REQUEST_QUEUE_SIZE];
+    uint8_t request_queue_count;
+    pthread_t tx_tid;
+    pthread_t sensor_tid;
+};
 
 /* HELPERS */
 
