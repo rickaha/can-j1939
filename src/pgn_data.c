@@ -8,18 +8,6 @@
 #include <stdio.h>
 #include <string.h>
 
-/* INIT */
-
-static component_id_t component_id = {0};
-static software_id_t software_id = {0};
-static ecu_id_t ecu_id = {0};
-
-void pgn_data_init(const component_id_t* cid, const software_id_t* sid, const ecu_id_t* eid) {
-    component_id = *cid;
-    software_id = *sid;
-    ecu_id = *eid;
-}
-
 /* BUILDERS */
 
 int build_pgn_59392_payload(uint8_t requester_addr, uint32_t requested_pgn, uint8_t* buf,
@@ -138,18 +126,18 @@ int build_pgn_65269_payload(const sensor_values_t* values, uint8_t* buf, size_t 
 
 /* DISPATCH */
 
-int build_payload(uint32_t pgn, const sensor_values_t* values, uint8_t* buf, size_t buf_len,
-                  size_t* len) {
+int build_payload(uint32_t pgn, const sensor_values_t* values, const ca_identity_t* identity,
+                  uint8_t* buf, size_t buf_len, size_t* len) {
 
     switch (pgn) {
     case PGN_64965:
-        return build_pgn_64965_payload(&ecu_id, buf, buf_len, len);
+        return build_pgn_64965_payload(&identity->ecu_id, buf, buf_len, len);
     case PGN_65269:
         return build_pgn_65269_payload(values, buf, buf_len, len);
     case PGN_65259:
-        return build_pgn_65259_payload(&component_id, buf, buf_len, len);
+        return build_pgn_65259_payload(&identity->component_id, buf, buf_len, len);
     case PGN_65242:
-        return build_pgn_65242_payload(&software_id, buf, buf_len, len);
+        return build_pgn_65242_payload(&identity->software_id, buf, buf_len, len);
     default:
         fprintf(stderr, "build_payload: unsupported PGN 0x%05X\n", pgn);
         return -1;
