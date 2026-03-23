@@ -6,8 +6,7 @@
 #ifndef ECU_H
 #define ECU_H
 
-#include "pgn_data.h"
-#include <stdint.h>
+#include "ca.h"
 
 /**
  * Set the device identity strings used in PGN responses.
@@ -48,12 +47,12 @@ int ecu_connect(const char* interface);
  *
  * Returns 0 on success, -1 on failure.
  */
-int ecu_start(void);
+int ecu_start_ca(ca_t* ca);
 
 /**
  * Signal all threads to stop and wait for them to exit.
  */
-void ecu_stop(void);
+void ecu_stop_ca(ca_t* ca);
 
 /**
  * Close the CAN socket and free all resources.

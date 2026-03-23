@@ -3,11 +3,14 @@
  *
  * Copyright (c) 2026 Rickard Häll
  */
+#include "ca.h"
 #include "ecu.h"
 #include "pgn_data.h"
 #include "stack_utils.h"
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #define PREFERRED_ADDRESS 0x80
 #define CAN_INTERFACE "vcan0"
@@ -26,37 +29,54 @@ static const device_name_t ECU_NAME = {
     .arbitrary_addr = 0x01       /* Enable Dynamic Address Claiming  */
 };
 
-static const component_id_t COMPONENT_ID = {
-    .make = "RPi",
-    .model = "Sensor-Hub",
-    .serial = "SN-00001",
-    .unit = "U-01",
+static const ca_identity_t CA_IDENTITY = {
+    .component_id = {.make = "RPi", .model = "Sensor-Hub", .serial = "SN-00001", .unit = "U-01"},
+    .software_id = {.version = "1.0.0"},
+    .ecu_id = {.part_number = "PN-00001",
+               .serial = "SN-00001",
+               .location = "Main-Board",
+               .type = "Sensor-Hub"},
 };
 
-static const software_id_t SOFTWARE_ID = {
-    .version = "1.0.0",
-};
+/* SIGNAL HANDLER */
 
-static const ecu_id_t ECU_ID = {
-    .part_number = "PN-00001",
-    .serial = "SN-00001",
-    .location = "Main-Board",
-    .type = "Sensor-Hub",
-};
+static volatile sig_atomic_t running = 1;
+
+static void signal_handler(int sig) {
+    (void)sig;
+    running = 0;
+}
 
 int main(void) {
     printf("Starting J1939 Sensor Hub...\n");
 
-    ecu_set_identity(&COMPONENT_ID, &SOFTWARE_ID, &ECU_ID);
-    ecu_set_address_config(ECU_NAME.value, PREFERRED_ADDRESS);
+    signal(SIGINT, signal_handler);
+    signal(SIGTERM, signal_handler);
 
     if (ecu_connect(CAN_INTERFACE) < 0) {
         fprintf(stderr, "Failed to connect to %s. Is the interface up?\n", CAN_INTERFACE);
         return EXIT_FAILURE;
     }
 
-    ecu_start(); /* blocks until shutdown */
+    ca_t* ca = ca_create(&ECU_NAME, PREFERRED_ADDRESS, &CA_IDENTITY);
+    if (ca == NULL) {
+        ecu_disconnect();
+        return EXIT_FAILURE;
+    }
 
+    if (ecu_start_ca(ca) < 0) {
+        ca_destroy(ca);
+        ecu_disconnect();
+        return EXIT_FAILURE;
+    }
+
+    while (running)
+        pause();
+
+    printf("\nShutting down...\n");
+
+    ecu_stop_ca(ca);
+    ca_destroy(ca);
     ecu_disconnect();
 
     printf("Sensor Hub shut down cleanly.\n");

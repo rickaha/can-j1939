@@ -4,7 +4,6 @@
  * Copyright (c) 2026 Rickard Häll
  */
 #include "ecu.h"
-#include "ca.h"
 #include "stack_utils.h"
 #include <pthread.h>
 #include <stdint.h>
