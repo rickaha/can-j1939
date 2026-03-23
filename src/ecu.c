@@ -5,7 +5,6 @@
  */
 #include "ecu.h"
 #include "ca.h"
-#include "pgn_data.h"
 #include "stack_utils.h"
 #include <pthread.h>
 #include <stdint.h>
@@ -63,11 +62,22 @@ static void* rx_thread(void* arg) {
 /* PUBLIC API */
 
 int ecu_connect(const char* interface) {
-    ecu.rxtx.sock = can_socket_create(interface);
-    if (ecu.rxtx.sock < 0) {
+    ecu.sock = can_socket_create(interface);
+    if (ecu.sock < 0) {
         fprintf(stderr, "ecu_connect: failed to create socket on %s\n", interface);
         return -1;
     }
+
+    ecu.running = 1;
+
+    if (pthread_create(&ecu.rx_tid, NULL, rx_thread, &ecu) != 0) {
+        perror("ecu_connect: pthread_create failed");
+        close(ecu.sock);
+        ecu.sock = -1;
+        ecu.running = 0;
+        return -1;
+    }
+
     return 0;
 }
 
@@ -115,11 +125,12 @@ void ecu_stop(void) {
 }
 
 void ecu_disconnect(void) {
-    if (ecu.rxtx.sock >= 0) {
-        close(ecu.rxtx.sock);
-        ecu.rxtx.sock = -1;
+    ecu.running = 0;
+
+    if (ecu.sock >= 0) {
+        close(ecu.sock);
+        ecu.sock = -1;
     }
-    pthread_mutex_destroy(&ecu.rxtx.mutex);
-    pthread_cond_destroy(&ecu.rxtx.cond);
-    pthread_mutex_destroy(&ecu.sensors_mutex);
+
+    pthread_join(ecu.rx_tid, NULL);
 }
