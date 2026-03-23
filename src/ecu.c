@@ -81,47 +81,32 @@ int ecu_connect(const char* interface) {
     return 0;
 }
 
-int ecu_start(void) {
-    int addr = can_address_claim_dynamic(ecu.rxtx.sock, ecu.name, ecu.preferred_addr);
-    if (addr < 0) {
-        fprintf(stderr, "ecu_start: failed to claim address\n");
-        return -1;
-    }
-    ecu.rxtx.claimed_addr = (uint8_t)addr;
-
-    /* Initialize synchronization primitives */
-    if (pthread_mutex_init(&ecu.rxtx.mutex, NULL) != 0 ||
-        pthread_cond_init(&ecu.rxtx.cond, NULL) != 0 ||
-        pthread_mutex_init(&ecu.sensors_mutex, NULL) != 0) {
-        perror("ecu_start: pthread init failed");
+int ecu_start_ca(ca_t* ca) {
+    if (ecu.ca_count >= MAX_CA) {
+        fprintf(stderr, "ecu_start_ca: max CA count reached\n");
         return -1;
     }
 
-    ecu.running = 1;
-
-    printf("Successfully claimed address 0x%02X. Entering main loop...\n", ecu.rxtx.claimed_addr);
-
-    /* Create threads in dependency order:
-     * sensor first — TX depends on sensor values being available.
-     * RX before TX  — RX must be listening before TX starts sending. */
-    if (pthread_create(&ecu.sensor_tid, NULL, sensor_thread, &ecu) != 0 ||
-        pthread_create(&ecu.rx_tid, NULL, rx_thread, &ecu) != 0 ||
-        pthread_create(&ecu.tx_tid, NULL, tx_thread, &ecu) != 0) {
-        perror("ecu_start: pthread_create failed");
-        ecu.running = 0;
+    if (ca_start(ca, ecu.sock) < 0) {
+        fprintf(stderr, "ecu_start_ca: ca_start failed\n");
         return -1;
     }
 
-    /*  Wait for all threads to finish (exit when they see running == 0) */
-    pthread_join(ecu.sensor_tid, NULL);
-    pthread_join(ecu.rx_tid, NULL);
-    pthread_join(ecu.tx_tid, NULL);
-
+    ecu.ca_list[ecu.ca_count++] = ca;
     return 0;
 }
 
-void ecu_stop(void) {
-    ecu.running = 0;
+void ecu_stop_ca(ca_t* ca) {
+    ca_stop(ca);
+
+    /* Remove from CA list. */
+    for (size_t i = 0; i < ecu.ca_count; i++) {
+        if (ecu.ca_list[i] == ca) {
+            ecu.ca_list[i] = ecu.ca_list[--ecu.ca_count];
+            ecu.ca_list[ecu.ca_count] = NULL;
+            break;
+        }
+    }
 }
 
 void ecu_disconnect(void) {
