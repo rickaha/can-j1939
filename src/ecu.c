@@ -121,64 +121,6 @@ static void* rx_thread(void* arg) {
     return NULL;
 }
 
-static void* tx_thread(void* arg) {
-    ecu_ctx_t* ctx = (ecu_ctx_t*)arg;
-
-    printf("[tx] Thread started. tid=%lu\n", pthread_self());
-
-    while (ctx->running) {
-        // Wait for RX signal or wake up every 10ms to service periodic PGNs.
-        pthread_mutex_lock(&ctx->rxtx.mutex);
-        struct timespec deadline;
-        clock_gettime(CLOCK_REALTIME, &deadline);
-        deadline.tv_nsec += 10000000L; /* 10ms */
-        if (deadline.tv_nsec >= 1000000000L) {
-            deadline.tv_sec++;
-            deadline.tv_nsec -= 1000000000L;
-        }
-        pthread_cond_timedwait(&ctx->rxtx.cond, &ctx->rxtx.mutex, &deadline);
-
-        // Drain on-request queue
-        while (ctx->rxtx.request_queue_count > 0) {
-            ctx->rxtx.request_queue_count--;
-            pgn_request_t req = ctx->rxtx.request_queue[ctx->rxtx.request_queue_count];
-
-            // Unlock while building and sending
-            pthread_mutex_unlock(&ctx->rxtx.mutex);
-
-            uint8_t buf[CAN_MAX_PAYLOAD];
-            size_t len;
-            if (build_payload(req.pgn, &ctx->sensors, buf, sizeof(buf), &len) == 0)
-                can_send(ctx->rxtx.sock, req.pgn, req.requester_addr, buf, len);
-
-            pthread_mutex_lock(&ctx->rxtx.mutex);
-        }
-
-        pthread_mutex_unlock(&ctx->rxtx.mutex);
-
-        // Periodic sensor PGNs
-        uint64_t now_ms = get_time_ms();
-        for (size_t i = 0; i < pgn_tasks_count; i++) {
-            if (now_ms - pgn_tasks[i].last_tx_ms < pgn_tasks[i].tx_rate_ms)
-                continue;
-
-            pthread_mutex_lock(&ctx->sensors_mutex);
-            sensor_values_t sensors = ctx->sensors;
-            pthread_mutex_unlock(&ctx->sensors_mutex);
-
-            uint8_t pbuf[CAN_MAX_PAYLOAD];
-            size_t plen;
-            if (build_payload(pgn_tasks[i].pgn, &sensors, pbuf, sizeof(pbuf), &plen) == 0)
-                can_send(ctx->rxtx.sock, pgn_tasks[i].pgn, J1939_NO_ADDR, pbuf, plen);
-
-            pgn_tasks[i].last_tx_ms = now_ms;
-        }
-    }
-
-    printf("[tx] Thread exiting.\n");
-    return NULL;
-}
-
 /* PUBLIC API */
 
 void ecu_set_identity(const component_id_t* component_id, const software_id_t* software_id,

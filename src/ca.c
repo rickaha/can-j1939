@@ -95,3 +95,62 @@ static void* sensor_thread(void* arg) {
     printf("[sensor] Thread exiting.\n");
     return NULL;
 }
+
+static void* tx_thread(void* arg) {
+    ca_t* ca = (ca_t*)arg;
+
+    printf("[tx] Thread started. tid=%lu\n", pthread_self());
+
+    while (ca->running) {
+        /* Wait for RX signal or wake up every 10ms to service periodic PGNs. */
+        pthread_mutex_lock(&ca->tx_mutex);
+        struct timespec deadline;
+        clock_gettime(CLOCK_REALTIME, &deadline);
+        deadline.tv_nsec += 10000000L; /* 10ms */
+        if (deadline.tv_nsec >= 1000000000L) {
+            deadline.tv_sec++;
+            deadline.tv_nsec -= 1000000000L;
+        }
+        pthread_cond_timedwait(&ca->tx_cond, &ca->tx_mutex, &deadline);
+
+        /* Drain on-request queue. */
+        while (ca->request_queue_count > 0) {
+            ca->request_queue_count--;
+            pgn_request_t req = ca->request_queue[ca->request_queue_count];
+
+            /* Unlock while building and sending. */
+            pthread_mutex_unlock(&ca->tx_mutex);
+
+            uint8_t buf[CAN_MAX_PAYLOAD];
+            size_t len;
+            if (build_payload(req.pgn, &ca->sensors, &ca->identity, buf, sizeof(buf), &len) == 0)
+                can_send(ca->sock, req.pgn, req.requester_addr, buf, len);
+
+            pthread_mutex_lock(&ca->tx_mutex);
+        }
+
+        pthread_mutex_unlock(&ca->tx_mutex);
+
+        /* Periodic sensor PGNs. */
+        uint64_t now_ms = get_time_ms();
+        for (size_t i = 0; i < pgn_tasks_count; i++) {
+            if (now_ms - pgn_tasks[i].last_tx_ms < pgn_tasks[i].tx_rate_ms)
+                continue;
+
+            pthread_mutex_lock(&ca->sensors_mutex);
+            sensor_values_t sensors = ca->sensors;
+            pthread_mutex_unlock(&ca->sensors_mutex);
+
+            uint8_t pbuf[CAN_MAX_PAYLOAD];
+            size_t plen;
+            if (build_payload(pgn_tasks[i].pgn, &sensors, &ca->identity, pbuf, sizeof(pbuf),
+                              &plen) == 0)
+                can_send(ca->sock, pgn_tasks[i].pgn, J1939_NO_ADDR, pbuf, plen);
+
+            pgn_tasks[i].last_tx_ms = now_ms;
+        }
+    }
+
+    printf("[tx] Thread exiting.\n");
+    return NULL;
+}
