@@ -5,11 +5,11 @@
  */
 #include "ca.h"
 #include "sensors.h"
-#include "time.h"
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 /* STRUCTS */
 

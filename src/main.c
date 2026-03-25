@@ -5,8 +5,6 @@
  */
 #include "ca.h"
 #include "ecu.h"
-#include "pgn_data.h"
-#include "stack_utils.h"
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
