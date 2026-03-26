@@ -43,10 +43,13 @@ static void* rx_thread(void* arg) {
         uint32_t pgn;
         uint8_t src_addr;
 
-        /* If returns -1 we break out of the loop, which exits the thread.
-         * That handles socket closure cleanly. */
-        if (can_receive(ctx->sock, &pgn, &src_addr, buf, sizeof(buf), &len) < 0)
+        int rc = can_receive(ctx->sock, &pgn, &src_addr, buf, sizeof(buf), &len);
+
+        if (rc < 0)
             break;
+
+        if (rc > 0)
+            continue;
 
         /* Dispatch to the CA that owns the destination address. */
         for (size_t i = 0; i < ctx->ca_count; i++) {
