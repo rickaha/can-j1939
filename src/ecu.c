@@ -35,7 +35,7 @@ static ecu_ctx_t ecu = {
 static void* rx_thread(void* arg) {
     ecu_ctx_t* ctx = (ecu_ctx_t*)arg;
 
-    printf("[rx] Thread started. tid=%lu\n", pthread_self());
+    printf("[rx] Thread started.\n");
 
     while (ctx->running) {
         uint8_t buf[CAN_MAX_PAYLOAD];

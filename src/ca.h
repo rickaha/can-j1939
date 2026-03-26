@@ -32,12 +32,6 @@ ca_t* ca_create(const device_name_t* name, uint8_t preferred_addr, const ca_iden
  */
 void ca_destroy(ca_t* ca);
 
-#endif /* CA_H */
-
-/*
- * The following functions are called by ecu.c — not intended for main.c.
- */
-
 /**
  * Start the CA — claims address and starts TX and sensor threads.
  * Called internally by ecu_start_ca(). Not for use in main.c.
@@ -68,3 +62,5 @@ uint8_t ca_get_claimed_addr(const ca_t* ca);
  * @sock      Socket fd for sending responses.
  */
 void ca_receive(ca_t* ca, uint32_t pgn, uint8_t src_addr, const uint8_t* buf, size_t len, int sock);
+
+#endif /* CA_H */

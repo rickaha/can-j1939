@@ -113,7 +113,12 @@ int build_pgn_65269_payload(const sensor_values_t* values, uint8_t* buf, size_t 
     buf[1] = 0xFF;
     buf[2] = 0xFF;
 
-    uint16_t ambient = (uint16_t)((values->ambient_temp + 273.0f) / 0.03125f);
+    float raw = (values->ambient_temp + 273.0f) / 0.03125f;
+    if (raw < 0.0f)
+        raw = 0.0f;
+    if (raw > 65535.0f)
+        raw = 65535.0f;
+    uint16_t ambient = (uint16_t)raw;
     buf[3] = (uint8_t)(ambient & 0xFF);
     buf[4] = (uint8_t)((ambient >> 8) & 0xFF);
     buf[5] = 0xFF;
