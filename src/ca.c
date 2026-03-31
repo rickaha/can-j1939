@@ -6,7 +6,7 @@
 #include "ca.h"
 #include "sensors.h"
 #include <pthread.h>
-#include <signal.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,7 +38,7 @@ static const pgn_task_t pgn_tasks_template[] = {
 #define PGN_TASKS_COUNT (sizeof(pgn_tasks_template) / sizeof(pgn_tasks_template[0]))
 
 struct ca_t {
-    volatile sig_atomic_t running;
+    atomic_int running;
     int sock;
     uint64_t name;
     uint8_t preferred_addr;
@@ -97,7 +97,7 @@ static void* sensor_thread(void* arg) {
 
     printf("[sensor] Thread started. tid=%lu\n", pthread_self());
 
-    while (ca->running) {
+    while (atomic_load(&ca->running)) {
         sensors_poll(ca);
     }
 
@@ -110,7 +110,7 @@ static void* rx_thread(void* arg) {
 
     printf("[rx] Thread started. addr=0x%02X tid=%lu\n", ca->claimed_addr, pthread_self());
 
-    while (ca->running) {
+    while (atomic_load(&ca->running)) {
         uint8_t buf[CAN_MAX_PAYLOAD];
         size_t len;
         uint32_t pgn;
@@ -136,7 +136,7 @@ static void* tx_thread(void* arg) {
 
     printf("[tx] Thread started. tid=%lu\n", pthread_self());
 
-    while (ca->running) {
+    while (atomic_load(&ca->running)) {
         /* Wait for RX signal or wake up every 10ms to service periodic PGNs. */
         pthread_mutex_lock(&ca->tx_mutex);
         struct timespec deadline;
@@ -250,7 +250,7 @@ int ca_start(ca_t* ca, const char* ifname) {
         return -1;
     }
 
-    ca->running = 1;
+    atomic_store(&ca->running, 1);
 
     /* sensor first — TX depends on sensor values being available.
      * RX last — it calls ca_receive() which may signal TX. */
@@ -258,7 +258,7 @@ int ca_start(ca_t* ca, const char* ifname) {
         pthread_create(&ca->tx_tid, NULL, tx_thread, ca) != 0 ||
         pthread_create(&ca->rx_tid, NULL, rx_thread, ca) != 0) {
         perror("ca_start: pthread_create failed");
-        ca->running = 0;
+        atomic_store(&ca->running, 0);
         close(ca->sock);
         ca->sock = -1;
         return -1;
@@ -268,7 +268,7 @@ int ca_start(ca_t* ca, const char* ifname) {
 }
 
 void ca_stop(ca_t* ca) {
-    ca->running = 0;
+    atomic_store(&ca->running, 0);
     pthread_cond_signal(&ca->tx_cond);
 
     /* Closing the socket unblocks can_receive() in the RX thread. */
@@ -321,7 +321,7 @@ void ca_receive(ca_t* ca, uint32_t pgn, uint8_t src_addr, const uint8_t* buf, si
             new_addr = can_address_claim_dynamic(ca->sock, ca->name, ca->claimed_addr + 1);
             if (new_addr < 0) {
                 fprintf(stderr, "[ca] Address range exhausted, shutting down.\n");
-                ca->running = 0;
+                atomic_store(&ca->running, 0);
                 break;
             }
             ca->claimed_addr = (uint8_t)new_addr;
@@ -339,7 +339,7 @@ void ca_receive(ca_t* ca, uint32_t pgn, uint8_t src_addr, const uint8_t* buf, si
                 new_addr = can_address_claim_dynamic(ca->sock, ca->name, ca->preferred_addr);
                 if (new_addr < 0) {
                     fprintf(stderr, "[ca] Cannot claim any address, shutting down.\n");
-                    ca->running = 0;
+                    atomic_store(&ca->running, 0);
                     break;
                 }
             }

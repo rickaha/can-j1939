@@ -9,21 +9,19 @@
 #include "ca.h"
 
 /**
- * Open the CAN socket and bind to @interface.
- * Must be called before ecu_start().
+ * Store the CAN interface name for use by ecu_start_ca().
+ * Must be called before ecu_start_ca().
  *
  * @interface  CAN interface name (e.g. "vcan0").
  *
- * Returns 0 on success, -1 on failure.
+ * Returns 0 on success.
  */
 int ecu_connect(const char* interface);
 
 /**
- * Claim an address and start all threads.
- * ecu_connect(), ecu_set_identity() and ecu_set_address_config() must
- * have been called first.
- *
- * Blocks until ecu_stop() is called or a thread exits.
+ * Start a CA — creates its socket, claims an address, and starts
+ * its threads. Registers the CA in the ECU list for ecu_disconnect().
+ * Must be called after ecu_connect().
  *
  * Returns 0 on success, -1 on failure.
  */
