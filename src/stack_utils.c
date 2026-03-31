@@ -5,7 +5,9 @@
  */
 #include "stack_utils.h"
 #include <endian.h>
+#include <errno.h>
 #include <net/if.h>
+#include <poll.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/ioctl.h>
@@ -207,6 +209,26 @@ int can_send(int sock, uint32_t pgn, uint8_t dest_addr, const void* payload, siz
 
 int can_receive(int sock, uint32_t* pgn, uint8_t* src_addr, uint8_t* buf, size_t buf_len,
                 size_t* recv_len) {
+    struct pollfd pfd = {.fd = sock, .events = POLLIN};
+
+    int prc = poll(&pfd, 1, 500); /* wait up to 500 ms */
+    if (prc < 0) {
+        if (errno == EINTR)
+            return 1; /* interrupted, treat like timeout/retry */
+
+        perror("can_receive: poll failed");
+        return -1;
+    }
+
+    if (prc == 0)
+        return 1; /* timeout, no frame */
+
+    if (!(pfd.revents & POLLIN)) {
+        if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+            return -1;
+        }
+        return 1;
+    }
     struct sockaddr_can src = {0};
     socklen_t src_len = sizeof(src);
 

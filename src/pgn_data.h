@@ -56,6 +56,16 @@ typedef struct {
 } ecu_id_t;
 
 /**
+ * Per-CA identity used in PGN responses.
+ * Each CA on the bus has its own identity.
+ */
+typedef struct {
+    component_id_t component_id;
+    software_id_t software_id;
+    ecu_id_t ecu_id;
+} ca_identity_t;
+
+/**
  * A single on-request entry pushed onto the request queue.
  */
 typedef struct {
@@ -73,19 +83,6 @@ typedef struct {
     uint8_t new_addr;
 } parsed_request_t;
 
-/* INIT */
-
-/**
- * Initialise pgn_data with device-specific identity.
- * Call once from main() before starting threads.
- *
- * @component_id   Device-specific component identification.
- * @software_id    Software identification strings.
- * @ecu_id         ECU identification strings.
- */
-void pgn_data_init(const component_id_t* component_id, const software_id_t* software_id,
-                   const ecu_id_t* ecu_id);
-
 /* BUILDERS */
 
 /**
@@ -94,14 +91,15 @@ void pgn_data_init(const component_id_t* component_id, const software_id_t* soft
  *
  * @pgn          PGN number to build payload for.
  * @values       Current sensor values (may be NULL for static PGNs).
+ * @identity     CA device specific identity.
  * @buf          Caller-supplied buffer to write the payload into.
  * @buf_len      Size of @buf in bytes.
  * @len          Written with the number of bytes produced on success.
  *
  * Returns 0 on success, -1 if PGN is unsupported or payload overflows.
  */
-int build_payload(uint32_t pgn, const sensor_values_t* values, uint8_t* buf, size_t buf_len,
-                  size_t* len);
+int build_payload(uint32_t pgn, const sensor_values_t* values, const ca_identity_t* identity,
+                  uint8_t* buf, size_t buf_len, size_t* len);
 
 /**
  * Build the PGN 59392 (Acknowledgement / NACK) payload.
