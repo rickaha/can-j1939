@@ -11,61 +11,77 @@ sensor data requests from other nodes, and broadcasts periodic sensor PGNs.
 
 ** Architecture
 
-Three threads operate concurrently over a single J1939 socket:
+The design follows the SAE J1939 model closely: one ECU holds one or more
+Controller Applications (CAs). Each CA is fully self-contained — it owns its
+own J1939 socket bound to its claimed address, and runs three threads:
 
-- ~rx_thread~ — receives all incoming frames. Handles network management
-  (address contention, commanded address) directly and queues on-request PGN
-  responses for TX.
+- ~rx_thread~ — blocks on ~can_receive()~ on the CA's own socket. Handles
+  network management (address contention, commanded address) directly and
+  queues on-request PGN responses for the TX thread.
 - ~tx_thread~ — drains the on-request queue and sends PGN response payloads.
-  Also broadcasts periodic sensor PGNs driven by ~pgn_tasks[]~.
+  Also broadcasts periodic sensor PGNs driven by ~pgn_tasks[]~ in ~ca_t~.
 - ~sensor_thread~ — polls hardware sensors at configurable intervals and
   writes values into a shared ~sensor_values_t~ struct protected by a mutex.
 
+The ECU layer is intentionally thin — it stores the interface name, manages
+the list of active CAs, and provides clean startup and shutdown via
+~ecu_connect()~, ~ecu_start_ca()~, ~ecu_stop_ca()~, and ~ecu_disconnect()~.
+
+Because each CA binds its socket to its own address, the kernel delivers only
+frames destined for that CA. No software dispatch is needed.
+
 #+BEGIN_SRC
-  ┌─────────────────────────────────────────────┐
-  │                   ecu.c                     │
-  │  rx_thread ──► request_queue ──► tx_thread  │
-  │      │                               │      │
-  │      │ (address mgmt)     (send PGNs)│      │
-  │      ▼                               ▼      │
-  │  stack_utils.c              pgn_data.c      │
-  │  (socket/address)           (builders)      │
-  │                                             │
-  │  sensor_thread ──► sensor_values_t          │
-  │  sensors.h                                  │
-  └─────────────────────────────────────────────┘
+  ┌──────────────────────────────────────────────────────┐
+  │                      ecu.c                           │
+  │  stores ifname, holds CA list, manages lifecycle     │
+  │                                                      │
+  │  ┌───────────────────────────────────────────────┐   │
+  │  │                    ca.c                       │   │
+  │  │  rx_thread ──► request_queue ──► tx_thread    │   │
+  │  │      │                               │        │   │
+  │  │      │ (address mgmt)     (send PGNs)│        │   │
+  │  │      ▼                               ▼        │   │
+  │  │  stack_utils.c              pgn_data.c        │   │
+  │  │  (socket/address)           (builders)        │   │
+  │  │                                               │   │
+  │  │  sensor_thread ──► sensor_values_t            │   │
+  │  │  sensors.h / sensors.c                        │   │
+  │  └───────────────────────────────────────────────┘   │
+  └──────────────────────────────────────────────────────┘
 #+END_SRC
 
 *** File Structure
 
-| File            | Purpose                                                      |
-|-----------------+--------------------------------------------------------------|
-| ~ecu.c~         | Application entry point, threads, task tables, node identity |
-| ~stack_utils.h~ | J1939 socket, address claiming, send/receive API             |
-| ~stack_utils.c~ | Implementation of the socket and transport layer             |
-| ~pgn_data.h~    | PGN definitions, structs, builder/parser API                 |
-| ~pgn_data.c~    | PGN payload builders, request handler, parsers               |
-| ~sensors.h~     | ~sensor_values_t~, ~sensor_task_t~, read/write functions     |
-| ~sensors.c~     | Sensor read/write implementations                            |
+| File              | Purpose                                                          |
+|-------------------+------------------------------------------------------------------|
+| ~main.c~          | Entry point, signal handling, ECU and CA setup                   |
+| ~ecu.h / ecu.c~   | ECU lifecycle — interface name, CA list, connect/disconnect      |
+| ~ca.h / ca.c~     | CA — socket, address claiming, RX/TX/sensor threads, task tables |
+| ~stack_utils.h~   | J1939 socket, address claiming, send/receive API                 |
+| ~stack_utils.c~   | Implementation of the socket and transport layer                 |
+| ~pgn_data.h~      | PGN definitions, structs, builder/parser API                     |
+| ~pgn_data.c~      | PGN payload builders, request handler, parsers                   |
+| ~sensors.h~       | ~sensor_values_t~, ~sensor_task_t~, read/write declarations      |
+| ~sensors.c~       | Sensor read/write implementations                                |
 
 ** Network Behavior
 
 *** Address Claiming
-On startup the node attempts dynamic address claiming starting at ~0x80~,
+On startup each CA attempts dynamic address claiming starting at ~0x80~,
 scanning upward through ~0xF7~ until an unchallenged address is found.
 If the full range is exhausted a Cannot Claim Address frame is broadcast
-and the node shuts down.
+and the CA shuts down.
 
 *** Contention Handling
 The RX thread monitors Address Claimed frames (~PGN 60928~). If another node
 claims our current address with a lower NAME value we yield and claim the next
-available address upward. If no address is available the node shuts down.
+available address upward. If no address is available the CA shuts down.
 
 *** Commanded Address
 If a Commanded Address frame (~PGN 65240~) is received targeting our NAME
 we attempt to claim the commanded address. If that address is contested we
 fall back to dynamic claiming from ~PREFERRED_ADDRESS~. If that also fails
-the node shuts down.
+the CA shuts down.
 
 *** Supported PGNs (on request)
 
@@ -74,15 +90,15 @@ the node shuts down.
 | 65259 | Component Identification | Make, Model, Serial, Unit             |
 | 65242 | Software Identification  | Firmware version string               |
 | 64965 | ECU Identification       | Part number, Serial, Location, Type   |
-| 65269 | Ambient Conditions       | Temperature sensors                   |
+| 65269 | Ambient Conditions       | Ambient air temperature (SPN 171)     |
 
 Any request for an unsupported PGN receives a NACK (~PGN 59392~) in response.
 
 *** Periodic PGNs
 
-| PGN   | Name               | Rate | Description                       |
+| PGN   | Name               | Rate | Implemented SPNs                  |
 |-------+--------------------+------+-----------------------------------|
-| 65269 | Ambient Conditions | 1 s  | Temperature sensors               |
+| 65269 | Ambient Conditions | 1 s  | SPN 171 — ambient air temperature |
 
 Unimplemented SPNs within a PGN are encoded as ~0xFF~ / ~0xFFFF~ (not available)
 until the corresponding sensor is added.
@@ -111,6 +127,7 @@ Ensure your CAN interface is up and the J1939 stack is loaded.
 *** 1. Add the value to ~sensor_values_t~ in ~sensors.h~
 #+BEGIN_SRC c
   typedef struct {
+      float ambient_temp; /* SPN 171 — ambient air temperature, degrees Celsius */
       float new_sensor;   /* SPN XXX — description */
   } sensor_values_t;
 #+END_SRC
@@ -146,10 +163,11 @@ Example implementations in ~sensors.c~:
   }
 #+END_SRC
 
-*** 3. Register the task in ~ecu.c~
+*** 3. Register the task in ~ca.c~
 #+BEGIN_SRC c
-  static sensor_task_t sensor_tasks[] = {
-      { .poll_rate_ms = 1000, .read = new_sensor_read,    .write = new_sensor_write    },
+  static const sensor_task_t sensor_tasks_template[] = {
+      { .poll_rate_ms = 1000, .read = ambient_temp_read, .write = ambient_temp_write },
+      { .poll_rate_ms = 1000, .read = new_sensor_read,   .write = new_sensor_write   },
   };
 #+END_SRC
 
@@ -161,16 +179,18 @@ belongs to a new PGN, add a new builder, register it in ~build_payload()~ and
 
 ** Extending — Adding a Periodic PGN
 
-Periodic PGN broadcasts are driven by ~pgn_tasks[]~ in ~ecu.c~. The TX thread
-loops over the table every 10ms, checks elapsed time against each entry's
-~tx_rate_ms~, snapshots ~sensor_values_t~ under the mutex, then calls
-~build_payload()~ and ~can_send()~ — no per-PGN logic in the thread itself.
+Periodic PGN broadcasts are driven by ~pgn_tasks_template[]~ in ~ca.c~. The TX
+thread loops over each CA's own copy of the table every 10ms, checks elapsed
+time against each entry's ~tx_rate_ms~, snapshots ~sensor_values_t~ under the
+mutex, then calls ~build_payload()~ and ~can_send()~ — no per-PGN logic in the
+thread itself.
 
 Add a PGN builder in ~pgn_data.c~, register it in ~build_payload()~, and add
-an entry to ~pgn_tasks[]~:
+an entry to ~pgn_tasks_template[]~:
 
 #+BEGIN_SRC c
-  static pgn_task_t pgn_tasks[] = {
+  static const pgn_task_t pgn_tasks_template[] = {
+      { .pgn = PGN_65269, .tx_rate_ms = 1000 },
       { .pgn = PGN_XXXXX, .tx_rate_ms = 1000 },
   };
 #+END_SRC
