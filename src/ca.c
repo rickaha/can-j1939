@@ -9,16 +9,33 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 #include <unistd.h>
 
-/* STRUCTS */
+/* TASKS */
 
 typedef struct {
     uint32_t pgn;
     uint32_t tx_rate_ms;
     uint64_t last_tx_ms;
 } pgn_task_t;
+
+/*
+ * Template arrays — read-only, used to initialise each CA instance.
+ * The mutable per-CA copies live in ca_t so each CA tracks its own
+ * last_tx_ms and last_poll_ms independently.
+ */
+static const sensor_task_t sensor_tasks_template[] = {
+    {.poll_rate_ms = 1000, .read = ambient_temp_read, .write = ambient_temp_write},
+};
+
+static const pgn_task_t pgn_tasks_template[] = {
+    {.pgn = PGN_65269, .tx_rate_ms = 1000},
+};
+
+#define SENSOR_TASKS_COUNT (sizeof(sensor_tasks_template) / sizeof(sensor_tasks_template[0]))
+#define PGN_TASKS_COUNT (sizeof(pgn_tasks_template) / sizeof(pgn_tasks_template[0]))
 
 struct ca_t {
     volatile sig_atomic_t running;
@@ -33,6 +50,8 @@ struct ca_t {
     pthread_cond_t tx_cond;
     pgn_request_t request_queue[REQUEST_QUEUE_SIZE];
     uint8_t request_queue_count;
+    sensor_task_t sensor_tasks[SENSOR_TASKS_COUNT];
+    pgn_task_t pgn_tasks[PGN_TASKS_COUNT];
     pthread_t rx_tid;
     pthread_t tx_tid;
     pthread_t sensor_tid;
@@ -46,42 +65,28 @@ static uint64_t get_time_ms(void) {
     return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)ts.tv_nsec / 1000000ULL;
 }
 
-/* TASKS */
-
-static sensor_task_t sensor_tasks[] = {
-    {.poll_rate_ms = 1000, .read = ambient_temp_read, .write = ambient_temp_write},
-};
-
-static const size_t sensor_tasks_count = sizeof(sensor_tasks) / sizeof(sensor_tasks[0]);
-
-static pgn_task_t pgn_tasks[] = {
-    {.pgn = PGN_65269, .tx_rate_ms = 1000},
-};
-
-static const size_t pgn_tasks_count = sizeof(pgn_tasks) / sizeof(pgn_tasks[0]);
-
 /* SENSORS POLL */
 
 static void sensors_poll(ca_t* ca) {
     uint64_t now_ms = get_time_ms();
 
-    for (size_t i = 0; i < sensor_tasks_count; i++) {
-        if (now_ms - sensor_tasks[i].last_poll_ms < sensor_tasks[i].poll_rate_ms)
+    for (size_t i = 0; i < SENSOR_TASKS_COUNT; i++) {
+        if (now_ms - ca->sensor_tasks[i].last_poll_ms < ca->sensor_tasks[i].poll_rate_ms)
             continue;
 
         /* Read from hardware into local buffer — no lock held during hardware access. */
         uint8_t buf[64];
-        if (sensor_tasks[i].read(buf) < 0) {
-            sensor_tasks[i].last_poll_ms = now_ms;
+        if (ca->sensor_tasks[i].read(buf) < 0) {
+            ca->sensor_tasks[i].last_poll_ms = now_ms;
             continue;
         }
 
         /* Write into sensor_values_t under the mutex. */
         pthread_mutex_lock(&ca->sensors_mutex);
-        sensor_tasks[i].write(&ca->sensors, buf);
+        ca->sensor_tasks[i].write(&ca->sensors, buf);
         pthread_mutex_unlock(&ca->sensors_mutex);
 
-        sensor_tasks[i].last_poll_ms = now_ms;
+        ca->sensor_tasks[i].last_poll_ms = now_ms;
     }
 }
 
@@ -163,8 +168,8 @@ static void* tx_thread(void* arg) {
 
         /* Periodic sensor PGNs. */
         uint64_t now_ms = get_time_ms();
-        for (size_t i = 0; i < pgn_tasks_count; i++) {
-            if (now_ms - pgn_tasks[i].last_tx_ms < pgn_tasks[i].tx_rate_ms)
+        for (size_t i = 0; i < PGN_TASKS_COUNT; i++) {
+            if (now_ms - ca->pgn_tasks[i].last_tx_ms < ca->pgn_tasks[i].tx_rate_ms)
                 continue;
 
             pthread_mutex_lock(&ca->sensors_mutex);
@@ -173,11 +178,11 @@ static void* tx_thread(void* arg) {
 
             uint8_t pbuf[CAN_MAX_PAYLOAD];
             size_t plen;
-            if (build_payload(pgn_tasks[i].pgn, &sensors, &ca->identity, pbuf, sizeof(pbuf),
+            if (build_payload(ca->pgn_tasks[i].pgn, &sensors, &ca->identity, pbuf, sizeof(pbuf),
                               &plen) == 0)
-                can_send(ca->sock, pgn_tasks[i].pgn, J1939_NO_ADDR, pbuf, plen);
+                can_send(ca->sock, ca->pgn_tasks[i].pgn, J1939_NO_ADDR, pbuf, plen);
 
-            pgn_tasks[i].last_tx_ms = now_ms;
+            ca->pgn_tasks[i].last_tx_ms = now_ms;
         }
     }
 
@@ -198,6 +203,9 @@ ca_t* ca_create(const device_name_t* name, uint8_t preferred_addr, const ca_iden
     ca->preferred_addr = preferred_addr;
     ca->identity = *identity;
     ca->sock = -1;
+
+    memcpy(ca->sensor_tasks, sensor_tasks_template, sizeof(sensor_tasks_template));
+    memcpy(ca->pgn_tasks, pgn_tasks_template, sizeof(pgn_tasks_template));
 
     return ca;
 }
