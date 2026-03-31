@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <unistd.h>
 
 /* STRUCTS */
 
@@ -32,6 +33,7 @@ struct ca_t {
     pthread_cond_t tx_cond;
     pgn_request_t request_queue[REQUEST_QUEUE_SIZE];
     uint8_t request_queue_count;
+    pthread_t rx_tid;
     pthread_t tx_tid;
     pthread_t sensor_tid;
 };
@@ -95,6 +97,32 @@ static void* sensor_thread(void* arg) {
     }
 
     printf("[sensor] Thread exiting.\n");
+    return NULL;
+}
+
+static void* rx_thread(void* arg) {
+    ca_t* ca = (ca_t*)arg;
+
+    printf("[rx] Thread started. addr=0x%02X tid=%lu\n", ca->claimed_addr, pthread_self());
+
+    while (ca->running) {
+        uint8_t buf[CAN_MAX_PAYLOAD];
+        size_t len;
+        uint32_t pgn;
+        uint8_t src_addr;
+
+        int rc = can_receive(ca->sock, &pgn, &src_addr, buf, sizeof(buf), &len);
+
+        if (rc < 0)
+            break;
+
+        if (rc > 0)
+            continue;
+
+        ca_receive(ca, pgn, src_addr, buf, len);
+    }
+
+    printf("[rx] Thread exiting. addr=0x%02X\n", ca->claimed_addr);
     return NULL;
 }
 
@@ -187,12 +215,18 @@ uint8_t ca_get_claimed_addr(const ca_t* ca) {
     return ca->claimed_addr;
 }
 
-int ca_start(ca_t* ca, int sock) {
-    ca->sock = sock;
+int ca_start(ca_t* ca, const char* ifname) {
+    ca->sock = can_socket_create(ifname);
+    if (ca->sock < 0) {
+        fprintf(stderr, "ca_start: failed to create socket on %s\n", ifname);
+        return -1;
+    }
 
     int addr = can_address_claim_dynamic(ca->sock, ca->name, ca->preferred_addr);
     if (addr < 0) {
         fprintf(stderr, "ca_start: failed to claim address\n");
+        close(ca->sock);
+        ca->sock = -1;
         return -1;
     }
     ca->claimed_addr = (uint8_t)addr;
@@ -203,16 +237,22 @@ int ca_start(ca_t* ca, int sock) {
         pthread_cond_init(&ca->tx_cond, NULL) != 0 ||
         pthread_mutex_init(&ca->sensors_mutex, NULL) != 0) {
         perror("ca_start: pthread init failed");
+        close(ca->sock);
+        ca->sock = -1;
         return -1;
     }
 
     ca->running = 1;
 
-    /* sensor first — TX depends on sensor values being available. */
+    /* sensor first — TX depends on sensor values being available.
+     * RX last — it calls ca_receive() which may signal TX. */
     if (pthread_create(&ca->sensor_tid, NULL, sensor_thread, ca) != 0 ||
-        pthread_create(&ca->tx_tid, NULL, tx_thread, ca) != 0) {
+        pthread_create(&ca->tx_tid, NULL, tx_thread, ca) != 0 ||
+        pthread_create(&ca->rx_tid, NULL, rx_thread, ca) != 0) {
         perror("ca_start: pthread_create failed");
         ca->running = 0;
+        close(ca->sock);
+        ca->sock = -1;
         return -1;
     }
 
@@ -222,13 +262,20 @@ int ca_start(ca_t* ca, int sock) {
 void ca_stop(ca_t* ca) {
     ca->running = 0;
     pthread_cond_signal(&ca->tx_cond);
+
+    /* Closing the socket unblocks can_receive() in the RX thread. */
+    if (ca->sock >= 0) {
+        close(ca->sock);
+        ca->sock = -1;
+    }
+
+    pthread_join(ca->rx_tid, NULL);
     pthread_join(ca->sensor_tid, NULL);
     pthread_join(ca->tx_tid, NULL);
     printf("CA 0x%02X stopped\n", ca->claimed_addr);
 }
 
-void ca_receive(ca_t* ca, uint32_t pgn, uint8_t src_addr, const uint8_t* buf, size_t len,
-                int sock) {
+void ca_receive(ca_t* ca, uint32_t pgn, uint8_t src_addr, const uint8_t* buf, size_t len) {
     parsed_request_t request = {0};
     if (parse_request(pgn, buf, len, &request) < 0)
         return;
@@ -247,7 +294,7 @@ void ca_receive(ca_t* ca, uint32_t pgn, uint8_t src_addr, const uint8_t* buf, si
             size_t nack_len;
             if (build_pgn_59392_payload(src_addr, request.pgn, nack_buf, sizeof(nack_buf),
                                         &nack_len) == 0)
-                can_send(sock, PGN_59392, src_addr, nack_buf, nack_len);
+                can_send(ca->sock, PGN_59392, src_addr, nack_buf, nack_len);
         } else {
             pthread_cond_signal(&ca->tx_cond);
             pthread_mutex_unlock(&ca->tx_mutex);
@@ -263,7 +310,7 @@ void ca_receive(ca_t* ca, uint32_t pgn, uint8_t src_addr, const uint8_t* buf, si
          */
         if (src_addr != J1939_IDLE_ADDR && src_addr == ca->claimed_addr &&
             request.name != ca->name && request.name < ca->name) {
-            new_addr = can_address_claim_dynamic(sock, ca->name, ca->claimed_addr + 1);
+            new_addr = can_address_claim_dynamic(ca->sock, ca->name, ca->claimed_addr + 1);
             if (new_addr < 0) {
                 fprintf(stderr, "[ca] Address range exhausted, shutting down.\n");
                 ca->running = 0;
@@ -279,9 +326,9 @@ void ca_receive(ca_t* ca, uint32_t pgn, uint8_t src_addr, const uint8_t* buf, si
          * Only act if the target NAME matches ours.
          */
         if (request.name == ca->name) {
-            new_addr = can_address_claim(sock, ca->name, request.new_addr);
+            new_addr = can_address_claim(ca->sock, ca->name, request.new_addr);
             if (new_addr < 0) {
-                new_addr = can_address_claim_dynamic(sock, ca->name, ca->preferred_addr);
+                new_addr = can_address_claim_dynamic(ca->sock, ca->name, ca->preferred_addr);
                 if (new_addr < 0) {
                     fprintf(stderr, "[ca] Cannot claim any address, shutting down.\n");
                     ca->running = 0;

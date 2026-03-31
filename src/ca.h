@@ -33,10 +33,14 @@ ca_t* ca_create(const device_name_t* name, uint8_t preferred_addr, const ca_iden
 void ca_destroy(ca_t* ca);
 
 /**
- * Start the CA — claims address and starts TX and sensor threads.
+ * Start the CA — creates its own socket on @ifname, claims an address,
+ * and starts the RX, TX, and sensor threads.
  * Called internally by ecu_start_ca(). Not for use in main.c.
+ *
+ * @ca      CA instance.
+ * @ifname  CAN interface name (e.g. "vcan0").
  */
-int ca_start(ca_t* ca, int sock);
+int ca_start(ca_t* ca, const char* ifname);
 
 /**
  * Stop the CA — signals threads to stop and waits for them to exit.
@@ -52,15 +56,14 @@ uint8_t ca_get_claimed_addr(const ca_t* ca);
 
 /**
  * Dispatch a received frame to this CA for processing.
- * Called by the ECU RX thread for each received frame.
+ * Called internally by the CA's own RX thread.
  *
  * @ca        CA instance.
  * @pgn       PGN of the received frame.
  * @src_addr  Source address of the sender.
  * @buf       Payload buffer.
  * @len       Length of payload.
- * @sock      Socket fd for sending responses.
  */
-void ca_receive(ca_t* ca, uint32_t pgn, uint8_t src_addr, const uint8_t* buf, size_t len, int sock);
+void ca_receive(ca_t* ca, uint32_t pgn, uint8_t src_addr, const uint8_t* buf, size_t len);
 
 #endif /* CA_H */
